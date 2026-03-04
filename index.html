@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://www.gstatic.com https://*.firebasedatabase.app; connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebasedatabase.app wss://*.peerjs.com https://*.peerjs.com https://*.firebasedatabase.app https://unpkg.com https://www.gstatic.com; frame-src https://*.firebasedatabase.app; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <title>NEON REBOUND: WORLD CHAMPIONSHIP</title>
+    <!--
+    🔒 SECURITY NOTICE 🔒
+    This application uses Firebase for backend services. API keys are intentionally public.
+    Security is enforced through Firebase Security Rules, not API key secrecy.
+    See: https://firebase.google.com/docs/projects/api-keys
+    -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js" crossorigin="anonymous"></script>
+</head>
+<body class="pulsing">
+
+<!-- Global Highscore Modal -->
+<div id="global-highscore-modal">
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:1px solid var(--gold);">
+        <h3 style="color:var(--gold); margin:0;">HALL OF FAME</h3>
+        <span onclick="closeGlobalModal()" style="cursor:pointer; color: white;">[CLOSE]</span>
+    </div>
+    <div id="global-list-content">Loading...</div>
+</div>
+
+<div id="main-body">
+    <!-- Seed Leaderboard -->
+    <div id="seed-leaderboard">
+        <div style="font-size: 11px; color: var(--neon); letter-spacing: 2px; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid rgba(0,242,255,0.2);">Seed: <span id="seed-title-tag">---</span></div>
+        <div id="seed-list-content">Syncing...</div>
+    </div>
+
+    <!-- Setup Menu -->
+    <div id="setup-menu">
+        <h1 style="color: var(--neon); letter-spacing: 4px; margin-bottom: 5px;">NEON REBOUND</h1>
+        <input type="text" id="name-input" placeholder="ENTER NAME" maxlength="12" oninput="updateMyName()">
+        <div id="name-warning">NAME REQUIRED</div>
+
+        <div id="player-list" style="background: rgba(255,255,255,0.05); padding: 10px; margin: 15px 0; border-radius: 8px; min-height: 50px;">
+            <div id="lobby-list-content">Lobby is empty...</div>
+        </div>
+
+        <input type="text" id="seed-input" placeholder="MISSION_SEED" oninput="onSeedInputChange()">
+        <button class="start-btn" id="main-start-btn" onclick="requestStart()">START MISSION</button>
+        <button class="highscore-btn" onclick="openGlobalModal()">WORLD RECORDS</button>
+
+        <div id="multiplayer-menu" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
+            <div id="auth-status-container" style="font-size: 9px; color: var(--neon); margin-bottom: 8px; text-align: center; font-family: monospace;">CONNECTING...</div>
+            <div id="my-id-container" onclick="copyMyID()">CONNECTING...</div>
+            <input type="text" id="join-id" placeholder="PASTE HOST ID">
+            <button id="connect-btn" class="secondary-btn" style="width: 100%;" onclick="connectToPeer()">JOIN LOBBY</button>
+        </div>
+
+        <div id="dev-console" style="margin-top: 15px; border-top: 1px solid var(--warning); padding-top: 10px; display: none;">
+            <div style="font-size: 9px; color: var(--warning); margin-bottom: 8px; text-align: center; font-weight: bold;">🔧 DEVELOPER CONSOLE</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px;">
+                <input type="text" id="dev-name" placeholder="Name" style="padding: 6px; font-size: 10px;">
+                <input type="number" id="dev-score" placeholder="Score" style="padding: 6px; font-size: 10px;">
+            </div>
+            <input type="text" id="dev-seed" placeholder="Seed (optional)" style="padding: 6px; font-size: 10px; margin-bottom: 5px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <button class="secondary-btn" style="font-size: 9px; padding: 6px;" onclick="devSubmitTest()">TEST SUBMIT</button>
+                <button class="secondary-btn" style="font-size: 9px; padding: 6px;" onclick="window.viewMyScores()">VIEW MINE</button>
+                <button class="secondary-btn" style="font-size: 9px; padding: 6px;" onclick="window.deleteMyScores()">DELETE MINE</button>
+                <button class="secondary-btn" style="font-size: 9px; padding: 6px;" onclick="window.reAuthenticate()">RE-AUTH</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Wrapper -->
+    <div class="game-wrapper" id="game-wrapper">
+        <div id="game-container">
+            <div id="ui"><div>SCORE: <span id="score">0</span></div></div>
+            <div id="player" class="player-box"><div class="name-tag" id="my-name-tag"></div></div>
+            <div id="overlay">
+                <div id="achievement-banner"></div>
+                <div id="winner-info" style="margin-bottom: 10px;"></div>
+                <h1 id="over-title" style="color: var(--warning); margin: 0; font-size: 24px;">MISSION OVER</h1>
+                <table id="final-leaderboard" style="width: 90%; margin: 15px 0; border-collapse: collapse; font-size: 14px;"></table>
+                <div id="host-restart-controls" style="display: none; width: 80%;">
+                    <button class="start-btn" onclick="requestStart()">REMATCH</button>
+                    <button class="secondary-btn" onclick="backToLobby()" style="width: 100%; color:white;">BACK TO LOBBY</button>
+                </div>
+                <div id="guest-wait-info" style="display: none; color: var(--neon);">WAITING FOR HOST...</div>
+                <button id="guest-exit-btn" class="secondary-btn" style="display:none; width:80%;" onclick="location.reload()">EXIT TO MENU</button>
+            </div>
+        </div>
+        <div id="live-leaderboard">
+            <div style="font-size: 10px; color: var(--neon); margin-bottom: 10px; font-weight: bold;">LIVE STATUS</div>
+            <div id="live-list-content-game"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Load modules -->
+<script type="module" src="js/firebase-manager.js"></script>
+<script type="module" src="js/multiplayer.js"></script>
+<script type="module" src="js/game-engine.js"></script>
+<script type="module" src="js/ui-controller.js"></script>
+
+</body>
+</html>
+

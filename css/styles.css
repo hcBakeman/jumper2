@@ -1,0 +1,81 @@
+/* ============================================
+   NEON REBOUND - STYLES
+   ============================================ */
+
+/* CSS VARIABLES */
+:root {
+    --neon: #00f2ff;
+    --bg: #0d0221;
+    --warning: #ff0055;
+    --pulse-color: #1a0b2e;
+    --gold: #ffd700;
+    --magenta: #ff00ff;
+}
+
+/* CUSTOM SCROLLBAR THEME */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: var(--neon); border-radius: 10px; box-shadow: 0 0 10px var(--neon); }
+
+/* BASE LAYOUT */
+body {
+    margin: 0; background: var(--bg); color: white;
+    font-family: 'Segoe UI', sans-serif; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+}
+
+/* ANIMATIONS */
+@keyframes breathe { 0%, 100% { background-color: var(--bg); } 50% { background-color: var(--pulse-color); } }
+.pulsing { animation: breathe 4s infinite ease-in-out; width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+@keyframes pulse-banner { 0%, 100% { transform: scale(1); text-shadow: 0 0 10px var(--gold); } 50% { transform: scale(1.05); text-shadow: 0 0 25px var(--gold); } }
+
+/* COMPONENTS */
+#name-warning {
+    color: var(--warning); font-size: 10px; font-weight: bold; letter-spacing: 1px;
+    margin-bottom: 10px; display: none; text-shadow: 0 0 10px var(--warning);
+}
+
+#setup-menu { margin-top: 40px; text-align: center; z-index: 10; width: 340px; }
+#game-container { position: relative; width: 400px; height: 600px; border: 4px solid #1a1a2e; overflow: hidden; background: #050110; box-shadow: 0 0 50px rgba(0,0,0,0.5); border-radius: 8px; }
+
+#global-highscore-modal {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 400px; max-height: 80vh; background: rgba(13, 2, 33, 0.98);
+    border: 2px solid var(--gold); border-radius: 12px; padding: 20px;
+    z-index: 2000; display: none; overflow-y: auto; box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+}
+
+.global-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255, 215, 0, 0.1); }
+.seed-link { color: var(--neon); cursor: pointer; text-decoration: underline; font-weight: bold; font-family: monospace; }
+
+#seed-leaderboard { position: absolute; top: 20px; right: 20px; width: 220px; background: rgba(13, 2, 33, 0.9); border-left: 3px solid var(--neon); padding: 15px; border-radius: 0 8px 8px 0; font-family: 'Courier New', monospace; z-index: 5; }
+.game-wrapper { position: relative; display: none; margin-top: 20px; }
+
+.player-box { position: absolute; width: 25px; height: 25px; border-radius: 4px; z-index: 20; will-change: transform; }
+#player { background: var(--neon); box-shadow: 0 0 15px var(--neon); }
+.opponent { background: var(--magenta); box-shadow: 0 0 15px var(--magenta); opacity: 0.8; }
+
+.name-tag { position: absolute; width: 100px; text-align: center; left: -37.5px; top: -20px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+.platform { position: absolute; height: 10px; background: #5465ff; box-shadow: 0 0 10px #5465ff; border-radius: 5px; z-index: 10; will-change: transform; }
+
+#ui { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 100; font-weight: bold; pointer-events: none; }
+#overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1100; text-align: center; padding: 20px; }
+
+/* BUTTONS */
+.start-btn { padding: 12px 24px; background: var(--neon); border: none; font-weight: bold; cursor: pointer; margin: 5px; border-radius: 8px; box-shadow: 0 0 10px var(--neon); text-transform: uppercase; width: 100%; }
+.secondary-btn { padding: 8px 16px; background: transparent; border: 1px solid #5465ff; color: #5465ff; cursor: pointer; border-radius: 8px; text-transform: uppercase; font-size: 11px; margin: 5px; }
+.highscore-btn { padding: 10px; background: #222; border: 1px solid var(--gold); color: var(--gold); font-weight: bold; cursor: pointer; width: 100%; border-radius: 8px; margin-top: 10px; }
+.kick-btn { background: var(--warning); border: none; color: white; font-size: 8px; padding: 2px 6px; border-radius: 4px; cursor: pointer; margin-left: 10px; text-transform: uppercase; }
+
+/* INPUT FIELDS */
+input[type="text"] { padding: 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a2e; color: white; margin-bottom: 5px; text-align: center; width: 100%; box-sizing: border-box; }
+
+/* LEADERBOARDS */
+#live-leaderboard { position: absolute; top: 0; left: -220px; width: 180px; background: rgba(26, 26, 46, 0.9); border-right: 3px solid var(--neon); padding: 15px; border-radius: 8px 0 0 8px; font-family: 'Courier New', monospace; }
+
+#my-id-container { font-size: 10px; color: var(--neon); margin-bottom: 5px; cursor: pointer; transition: color 0.2s; }
+#my-id-container:hover { color: white; }
+
+.wr-banner { color: var(--gold); font-weight: bold; font-size: 22px; animation: pulse-banner 1s infinite; margin-bottom: 15px; }
+
