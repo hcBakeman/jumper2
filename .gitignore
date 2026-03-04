@@ -1,0 +1,9 @@
+config/
+
+.idea/
+
+*.md
+!README.md
+*.log
+*.tmp
+*.bak
