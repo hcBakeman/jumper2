@@ -4,7 +4,7 @@
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, query, orderByChild, equalTo, serverTimestamp, remove, get, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, onValue, query, orderByChild, equalTo, remove, get, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { firebaseConfig } from "../config/firebase-config.js";
 
@@ -75,44 +75,9 @@ export function validateScore(score) {
     return score >= SECURITY_CONFIG.MIN_SCORE && score <= SECURITY_CONFIG.MAX_SCORE;
 }
 
-/**
- * Checks if user can submit score (rate limiting)
- * @returns {Promise<boolean>} True if submission is allowed
- */
-async function canSubmitScore(db) {
-    if (!window.currentUser) return false;
-
-    try {
-        const cooldownRef = ref(db, `user_cooldowns/${window.currentUser.uid}`);
-        const snapshot = await get(cooldownRef);
-
-        if (!snapshot.exists()) return true;
-
-        const lastSubmission = snapshot.val();
-        const now = Date.now();
-        const timeSinceLastSubmit = now - lastSubmission;
-
-        return timeSinceLastSubmit >= SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS;
-    } catch (error) {
-        console.error("Error checking cooldown:", error);
-        return false;
-    }
-}
-
-/**
- * Updates cooldown timestamp
- * @returns {Promise<void>}
- */
-async function updateCooldown(db) {
-    if (!window.currentUser) return;
-
-    try {
-        const cooldownRef = ref(db, `user_cooldowns/${window.currentUser.uid}`);
-        await set(cooldownRef, serverTimestamp());
-    } catch (error) {
-        console.error("Error updating cooldown:", error);
-    }
-}
+// Note: Rate limiting is now handled server-side by Cloud Functions
+// Client-side checks removed to prevent redundant validation
+// The Cloud Function enforces 5-second cooldown at the database level
 
 /**
  * Renders a leaderboard row with rank, name, and score
@@ -242,28 +207,20 @@ window.submitGlobalScore = async function(n, s, seed) {
         return false;
     }
 
-    // Check rate limiting
-    const canSubmit = await canSubmitScore(db);
-    if (!canSubmit) {
-        console.warn("⚠️ Rate limit: Please wait before submitting another score");
-        showCooldownMessage();
-        return false;
-    }
-
-    // Sanitize and validate name
+    // Sanitize and validate name (client-side pre-check for better UX)
     const sanitizedName = sanitizeName(n);
     if (!sanitizedName) {
         console.warn("⚠️ Invalid name format");
         return false;
     }
 
-    // Validate score
+    // Validate score (client-side pre-check for better UX)
     if (!validateScore(s)) {
         console.warn("⚠️ Invalid score value");
         return false;
     }
 
-    // Sanitize and validate seed
+    // Sanitize and validate seed (client-side pre-check for better UX)
     const sanitizedSeed = sanitizeSeed(seed);
     if (!sanitizedSeed) {
         console.warn("⚠️ Invalid seed format");
@@ -271,21 +228,41 @@ window.submitGlobalScore = async function(n, s, seed) {
     }
 
     try {
-        await push(ref(db, 'highscores'), {
+        // Write directly to Firebase Realtime Database
+        // Security is enforced by Firebase Security Rules
+        const highscoresRef = ref(db, 'highscores');
+        const newScoreRef = push(highscoresRef);
+
+        await set(newScoreRef, {
             name: sanitizedName,
-            score: s,
+            score: Math.floor(s), // Ensure integer
             seed: sanitizedSeed,
             timestamp: serverTimestamp(),
             uid: user.uid
         });
 
-        // Update cooldown after successful submission
-        await updateCooldown(db);
+        // Update cooldown timestamp
+        const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
+        await set(cooldownRef, serverTimestamp());
 
-        console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed}`);
+        console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed} (ID: ${newScoreRef.key})`);
         return true;
     } catch (error) {
         console.error("❌ Score submission failed:", error);
+
+        // Handle specific error types
+        if (error.code === 'PERMISSION_DENIED') {
+            // Check common causes
+            if (error.message && error.message.includes('cooldown')) {
+                console.warn("⚠️ Rate limit: Please wait 5 seconds between submissions");
+                showCooldownMessage();
+            } else {
+                console.warn("⚠️ Permission denied. Check authentication or data validation.");
+            }
+        } else {
+            console.warn("⚠️ Submission error. Please try again.");
+        }
+
         return false;
     }
 };
