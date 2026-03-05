@@ -4,9 +4,8 @@
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, onValue, query, orderByChild, equalTo, remove, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, onValue, query, orderByChild, equalTo, remove, get, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-functions.js";
 import { firebaseConfig } from "../config/firebase-config.js";
 
 // ============================================
@@ -103,7 +102,6 @@ export function renderLeaderboardRow(entry, index, isTopRank = false) {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth();
-const functions = getFunctions(app);
 
 window.seedTop1Score = 0;
 window.seedTop10Score = 0;
@@ -230,29 +228,39 @@ window.submitGlobalScore = async function(n, s, seed) {
     }
 
     try {
-        // Call Cloud Function for secure server-side submission
-        const submitScoreFunction = httpsCallable(functions, 'submitScore');
-        const result = await submitScoreFunction({
+        // Write directly to Firebase Realtime Database
+        // Security is enforced by Firebase Security Rules
+        const highscoresRef = ref(db, 'highscores');
+        const newScoreRef = push(highscoresRef);
+
+        await set(newScoreRef, {
             name: sanitizedName,
-            score: s,
-            seed: sanitizedSeed
+            score: Math.floor(s), // Ensure integer
+            seed: sanitizedSeed,
+            timestamp: serverTimestamp(),
+            uid: user.uid
         });
 
-        console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed} (ID: ${result.data.scoreId})`);
+        // Update cooldown timestamp
+        const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
+        await set(cooldownRef, serverTimestamp());
+
+        console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed} (ID: ${newScoreRef.key})`);
         return true;
     } catch (error) {
         console.error("❌ Score submission failed:", error);
 
         // Handle specific error types
-        if (error.code === 'functions/unauthenticated') {
-            console.warn("⚠️ Authentication error. Please refresh the page.");
-        } else if (error.code === 'functions/resource-exhausted') {
-            console.warn("⚠️ Rate limit: Please wait 5 seconds between submissions");
-            showCooldownMessage();
-        } else if (error.code === 'functions/invalid-argument') {
-            console.warn("⚠️ Invalid data:", error.message);
+        if (error.code === 'PERMISSION_DENIED') {
+            // Check common causes
+            if (error.message && error.message.includes('cooldown')) {
+                console.warn("⚠️ Rate limit: Please wait 5 seconds between submissions");
+                showCooldownMessage();
+            } else {
+                console.warn("⚠️ Permission denied. Check authentication or data validation.");
+            }
         } else {
-            console.warn("⚠️ Server error. Please try again.");
+            console.warn("⚠️ Submission error. Please try again.");
         }
 
         return false;
