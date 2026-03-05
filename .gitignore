@@ -37,8 +37,10 @@ ui-debug.log
 .env.*.local
 # NOTE: config/ and docs/ are intentionally tracked in Git
 # Firebase API keys are safe to expose (security via Firebase Rules)
-# config/
-# docs/
+config/
+docs/
+.github/
+functions/
 
 # Build outputs
 dist/
