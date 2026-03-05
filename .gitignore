@@ -35,7 +35,8 @@ ui-debug.log
 .env
 .env.local
 .env.*.local
-config/firebase-config.js
+config/
+docs/
 
 # Build outputs
 dist/
