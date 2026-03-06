@@ -200,10 +200,9 @@ function updateAuthUI() {
             "NOT_AUTHENTICATED": "#ffaa00",
             "AUTH_FAILED": "var(--warning)"
         };
-        const statusText = window.authStatus === "AUTHENTICATED"
+        authContainer.innerHTML = window.authStatus === "AUTHENTICATED"
             ? `AUTH: ${window.currentUser?.uid?.substring(0, 8)}...`
             : `AUTH: ${window.authStatus}`;
-        authContainer.innerHTML = statusText;
         authContainer.style.color = statusColors[window.authStatus] || "white";
     }
 }
@@ -302,7 +301,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         // OPTION 1: Use Cloud Functions for enhanced server-side validation (requires Blaze plan)
         if (USE_CLOUD_FUNCTIONS) {
             const submitScoreFunction = httpsCallable(functions, 'submitScore');
-            const result = await submitScoreFunction({
+            await submitScoreFunction({
                 name: sanitizedName,
                 score: Math.floor(s),
                 seed: sanitizedSeed,
@@ -370,16 +369,6 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             if (error.message && error.message.includes('cooldown')) {
                 console.warn("⚠️ Rate limit: Please wait 30 seconds between submissions");
                 showCooldownMessage(30);
-            } else {
-                console.warn("⚠️ Permission denied. Check authentication or data validation.");
-            }
-        } else {
-            console.warn("⚠️ Submission error. Please try again.");
-        }
-
-        return false;
-    }
-};
             } else {
                 console.warn("⚠️ Permission denied. Check authentication or data validation.");
             }
