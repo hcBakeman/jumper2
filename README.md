@@ -134,9 +134,18 @@ testSubmitScore("NAME", score, "seed")  // Submit test score
 viewMyScores()                          // View your scores
 deleteMyScores()                        // Delete your scores
 reAuthenticate()                        // Force re-auth
+
+// Telemetry validation testing:
+runTelemetryTests()                     // Run comprehensive test suite
+testValidTelemetry()                    // Test valid scenarios
+testBoundaries()                        // Test edge cases
+testCheatDetection()                    // Test cheat detection
+testCustomTelemetry(score, telemetry)  // Test custom values
 ```
 
 **Note:** Debug console is automatically disabled on production domains.
+
+**See:** `docs/TELEMETRY-TESTING-GUIDE.md` for detailed testing instructions.
 
 ## 📦 Deployment
 

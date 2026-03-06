@@ -53,7 +53,7 @@ async function generateScoreChecksum(name, score, seed, telemetry, uid) {
  * @param {Object} telemetry - Game telemetry data
  * @returns {boolean} True if telemetry is reasonable
  */
-function validateTelemetry(score, telemetry) {
+export function validateTelemetry(score, telemetry) {
     // Basic sanity checks
     if (telemetry.jumps < 1 || telemetry.platforms < 1) return false;
     if (telemetry.duration < 1 || telemetry.duration > 3600) return false;
