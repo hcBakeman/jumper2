@@ -4,7 +4,7 @@
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, onValue, query, orderByChild, equalTo, remove, get, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, onValue, query, orderByChild, equalTo, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-functions.js";
 import { firebaseConfig } from "../config/firebase-config.js";
@@ -395,160 +395,24 @@ function showCooldownMessage(seconds = 30) {
 }
 
 // ============================================
-// DEVELOPER CONSOLE FUNCTIONS
+// DEVELOPER CONSOLE LOADER
 // ============================================
+// Developer functions moved to js_admin/dev-console.js
+// Load conditionally with: ?debug=1 on localhost only
 
-// TEST FUNCTION: Submit a test score
-window.testSubmitScore = function(name, score, seed) {
-    name = name || "TEST_PLAYER";
-    score = score || 100;
-    seed = seed || document.getElementById('seed-input').value || "MISSION_1";
-
-    // Generate mock telemetry
-    const mockTelemetry = {
-        jumps: Math.floor(score / 8),
-        platforms: Math.floor(score / 8),
-        duration: Math.floor(score / 10) + 5,
-        maxFall: 300,
-        events: [],
-        integrityToken: Math.floor(Math.random() * 1000000)
-    };
-
-    console.log(`🧪 Testing score submission: ${name} - ${score} on ${seed}`);
-    console.log(`📊 Mock telemetry:`, mockTelemetry);
-    window.submitGlobalScore(name, score, seed, mockTelemetry);
-
-    // Wait and update sidebar
-    setTimeout(() => {
-        window.updateSeedSidebar();
-        console.log("✅ Test complete. Check seed leaderboard or global records.");
-    }, 1000);
-};
-
-// VIEW MY SCORES: Display all scores by current user
-window.viewMyScores = function() {
-    if (!auth.currentUser) {
-        console.error("❌ Not authenticated. Cannot view scores.");
-        return;
-    }
-
-    const uid = auth.currentUser.uid;
-    console.log(`🔍 Fetching scores for UID: ${uid}`);
-
-    get(ref(db, 'highscores')).then((snapshot) => {
-        if (snapshot.exists()) {
-            const allScores = [];
-            snapshot.forEach((child) => {
-                const data = child.val();
-                if (data.uid === uid) {
-                    allScores.push({ key: child.key, ...data });
-                }
-            });
-
-            if (allScores.length === 0) {
-                console.log("📊 No scores found for your account.");
-            } else {
-                console.log(`📊 Found ${allScores.length} score(s):`);
-                allScores.sort((a, b) => b.score - a.score);
-                allScores.forEach((s, i) => {
-                    console.log(`  ${i + 1}. ${s.name} - ${s.score} points (${s.seed}) [Key: ${s.key}]`);
-                });
-            }
-            return allScores;
-        } else {
-            console.log("📊 No scores in database.");
-            return [];
-        }
-    }).catch((error) => {
-        console.error("❌ Error fetching scores:", error);
-    });
-};
-
-// DELETE MY SCORES: Remove all scores by current user
-window.deleteMyScores = function() {
-    if (!auth.currentUser) {
-        console.error("❌ Not authenticated. Cannot delete scores.");
-        return;
-    }
-
-    const uid = auth.currentUser.uid;
-    const confirmDelete = confirm(`⚠️ Delete ALL scores for UID: ${uid.substring(0, 12)}...?\n\nThis cannot be undone!`);
-
-    if (!confirmDelete) {
-        console.log("❌ Deletion cancelled.");
-        return;
-    }
-
-    console.log(`🗑️ Deleting scores for UID: ${uid}`);
-
-    get(ref(db, 'highscores')).then((snapshot) => {
-        if (snapshot.exists()) {
-            let deleteCount = 0;
-            const deletePromises = [];
-
-            snapshot.forEach((child) => {
-                const data = child.val();
-                if (data.uid === uid) {
-                    deleteCount++;
-                    deletePromises.push(remove(ref(db, `highscores/${child.key}`)));
-                }
-            });
-
-            if (deleteCount === 0) {
-                console.log("📊 No scores found to delete.");
-            } else {
-                Promise.all(deletePromises).then(() => {
-                    console.log(`✅ Successfully deleted ${deleteCount} score(s).`);
-                    window.updateSeedSidebar();
-                }).catch((error) => {
-                    console.error("❌ Error deleting scores:", error);
-                });
-            }
-        }
-    }).catch((error) => {
-        console.error("❌ Error fetching scores:", error);
-    });
-};
-
-// RE-AUTHENTICATE: Force re-authentication
-window.reAuthenticate = function() {
-    console.log("🔄 Re-authenticating...");
-    signInAnonymously(auth).then(() => {
-        console.log("✅ Re-authentication successful.");
-    }).catch((error) => {
-        console.error("❌ Re-authentication failed:", error);
-    });
-};
-
-// Show console help
-console.log(`
-🎮 NEON REBOUND - Developer Console Commands:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 testSubmitScore(name, score, seed) - Submit test score
-📋 viewMyScores() - View all your scores
-🗑️ deleteMyScores() - Delete all your scores
-🔄 reAuthenticate() - Force re-authentication
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Example: testSubmitScore("ACE", 500, "MISSION_1")
-
-⚠️ SECURITY NOTICE:
-- API keys are public by design (Firebase docs)
-- Security enforced by Firebase Security Rules
-- Rate limiting: 5 seconds between submissions
-- All inputs are sanitized and validated
-`);
-
-// Enable dev console with security check
 const urlParams = new URLSearchParams(window.location.search);
 const debugToken = urlParams.get('debug');
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 if (debugToken === '1' && isLocalhost) {
-    const devConsole = document.getElementById('dev-console');
-    if (devConsole) {
-        devConsole.style.display = 'block';
-        console.log("🔧 Developer console enabled (localhost only)");
-    }
+    // Dynamically load dev console module
+    import('../js_admin/dev-console.js')
+        .then(() => {
+            console.log("🔧 Developer console loaded");
+        })
+        .catch((error) => {
+            console.error("❌ Failed to load developer console:", error);
+        });
 } else if (debugToken === '1' && !isLocalhost) {
     console.warn("⚠️ Debug mode disabled: Only available on localhost");
 }
