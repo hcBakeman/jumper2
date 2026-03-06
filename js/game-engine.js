@@ -11,6 +11,17 @@ export let gameTime = 0, lastTime = 0;
 export let isRunning = false, isGameOver = false;
 export let myAbsHeight = 0;
 
+// Telemetry tracking for anti-cheat
+export let gameTelemetry = {
+    jumps: 0,
+    platformTouches: 0,
+    maxFallDistance: 0,
+    gameStartTime: 0,
+    lastJumpY: 0,
+    events: [],
+    integrityToken: 0
+};
+
 window.player = player;
 window.cameraY = cameraY;
 window.myAbsHeight = myAbsHeight;
@@ -58,6 +69,15 @@ export function initGame(seed) {
     gameTime = 0;
     lastTime = performance.now();
     platforms = [];
+
+    // Reset telemetry
+    gameTelemetry.jumps = 0;
+    gameTelemetry.platformTouches = 0;
+    gameTelemetry.maxFallDistance = 0;
+    gameTelemetry.gameStartTime = Date.now();
+    gameTelemetry.lastJumpY = 0;
+    gameTelemetry.events = [];
+    gameTelemetry.integrityToken = Math.floor(Math.random() * 1000000);
 
     document.querySelectorAll('.platform').forEach(p => p.remove());
     for(let id in opponents) {
@@ -112,6 +132,30 @@ function updateLogic(dt) {
             let screenY = p.worldY + cameraY;
             if(player.vy > 0 && player.x+25 > p.x && player.x < p.x+p.w && player.y+25 > screenY && player.y+25 < screenY+15) {
                 player.vy = -650;
+
+                // Track telemetry
+                gameTelemetry.jumps++;
+                gameTelemetry.platformTouches++;
+
+                // Track fall distance
+                const fallDist = Math.abs(screenY - gameTelemetry.lastJumpY);
+                if (fallDist > gameTelemetry.maxFallDistance) {
+                    gameTelemetry.maxFallDistance = fallDist;
+                }
+                gameTelemetry.lastJumpY = screenY;
+
+                // Record event for replay validation
+                if (gameTelemetry.events.length < 1000) {
+                    gameTelemetry.events.push({
+                        t: Math.floor(gameTime * 1000),
+                        y: Math.floor(screenY),
+                        x: Math.floor(player.x),
+                        h: Math.floor(myAbsHeight)
+                    });
+                }
+
+                // Update integrity token
+                gameTelemetry.integrityToken = (gameTelemetry.integrityToken * 31 + Math.floor(screenY * 1000)) % 1000000;
             }
         });
 
@@ -126,7 +170,15 @@ function updateLogic(dt) {
         if(player.y + 25 > 600) {
             isGameOver = true;
             const seed = document.getElementById('seed-input').value || "MISSION_1";
-            window.submitGlobalScore(player.name, Math.floor(myAbsHeight), seed);
+            const duration = Math.floor((Date.now() - gameTelemetry.gameStartTime) / 1000);
+            window.submitGlobalScore(player.name, Math.floor(myAbsHeight), seed, {
+                jumps: gameTelemetry.jumps,
+                platforms: gameTelemetry.platformTouches,
+                duration: duration,
+                maxFall: Math.floor(gameTelemetry.maxFallDistance),
+                events: gameTelemetry.events.slice(0, 100), // Send first 100 events
+                integrityToken: gameTelemetry.integrityToken
+            });
         }
     } else {
         // DEATH CAM: Follow alive player with highest score

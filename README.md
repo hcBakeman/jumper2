@@ -1,4 +1,4 @@
-# 🎮 NEON REBOUND - Secure Multiplayer Game
+# 🎮 NEON REBOUND - Multiplayer Jumping Game
 
 A fast-paced vertical jumping game with real-time multiplayer, global leaderboards, and seed-based challenges. Built with Firebase and PeerJS - no backend server, no build tools, no dependencies required!
 
@@ -9,9 +9,9 @@ A fast-paced vertical jumping game with real-time multiplayer, global leaderboar
 - **Real-time Multiplayer** - Play with up to 8 friends via peer-to-peer connections
 - **Global Leaderboards** - Compete for world records on any seed
 - **Seed-Based Levels** - Share custom seeds or play daily challenges
-- **Secure by Design** - Comprehensive security without backend infrastructure
 - **Anonymous Play** - No registration required, just enter a name and play
 - **Cross-Platform** - Works on desktop and mobile browsers
+- **Free Hosting** - Deploy to GitHub Pages at zero cost
 
 ## 🚀 Quick Start
 
@@ -76,44 +76,6 @@ jumper2/
 └── README.md               # This file
 ```
 
-## 🔒 Security Features
-
-This game implements robust security with **two deployment options**:
-
-### Option 1: Firebase Security Rules Only (Recommended for Free Tier)
-- **Security Level:** ~60-65% (sufficient for casual games)
-- **Cost:** $0/month (100% free)
-- **Complexity:** Low (easier deployment)
-
-### Option 2: Cloud Functions + Security Rules (Enhanced Security)
-- **Security Level:** ~75-80% (production-grade)
-- **Cost:** ~$0-5/month (requires Blaze plan)
-- **Complexity:** Medium (requires Cloud Functions)
-
----
-
-### Firebase Security Rules (Database-Level Validation)
-- ✅ **Comprehensive validation** - All submissions validated at database level
-- ✅ **Rate limiting** - 5 second cooldown enforced server-side
-- ✅ **Authentication checks** - Firebase Anonymous Auth required
-- ✅ **Input validation** - Names, scores, and seeds validated before write
-- ✅ **Timestamp verification** - Server timestamps prevent replay attacks
-- ✅ **Write-once pattern** - Scores cannot be modified after submission
-
-### Cloud Functions (Optional - Enhanced Security)
-- ✅ **Server-side validation** - All score submissions go through Cloud Functions
-- ✅ **Additional rate limiting** - Per-user cooldown tracking
-- ✅ **Advanced input sanitization** - Server-side data cleaning
-- ✅ **Tamper-proof** - Cannot be bypassed via browser tools
-
-### Client-Side Protection
-- ✅ Content Security Policy (XSS prevention)
-- ✅ HTML sanitization (all user inputs)
-- ✅ Input validation (strict type checking)
-- ✅ PeerJS connection limits (max 8 players)
-- ✅ Position clamping (prevents impossible states)
-
-**See [`docs/SECURITY.md`](docs/SECURITY.md) for detailed security documentation.**
 
 ## 🎯 Game Controls
 
@@ -187,7 +149,7 @@ reAuthenticate()                        // Force re-auth
 - ✅ **Automatic SSL** - HTTPS enabled automatically
 - ✅ **Auto-deploy** - Push to GitHub = instant deploy
 - ✅ **No dependencies** - No build tools, no npm packages
-- ✅ **Production-ready** - 60-65% security (sufficient for most games)
+- ✅ **Production-ready** - Global CDN, fast performance
 
 **Quick Deploy (3 steps):**
 
@@ -218,27 +180,13 @@ npm install -g firebase-tools
 
 # Login and deploy
 firebase login
-firebase deploy --only database,hosting
+firebase deploy --only hosting
 ```
 
 Both GitHub Pages and Firebase Hosting use the same code - just different hosting platforms!
 
----
-
-### Cloud Functions (Optional Enhancement)
-
-**Do you need Cloud Functions?**
-- ❌ **NO** for most games (current security is sufficient)
-- ✅ **YES** for highly competitive games requiring maximum security
-
-**What it adds:**
-- Enhanced security: 60-65% → 75-80%
-- Server-side score validation
-- Cost: ~$0-5/month (requires Firebase Blaze plan)
-
-**See `functions/README.md` for Cloud Functions setup.**
-
 ## 🔧 Configuration
+
 
 ### Firebase Setup (Required)
 
@@ -252,47 +200,23 @@ Both GitHub Pages and Firebase Hosting use the same code - just different hostin
    - In project, go to Realtime Database
    - Click "Create Database"
    - Choose any location (e.g., europe-west1)
-   - Start in **test mode** (we'll add rules next)
+   - Start in **test mode** (or production mode with rules)
 
 3. **Enable Anonymous Authentication**
    - Go to Authentication → Sign-in method
    - Enable "Anonymous" provider
 
-4. **Deploy Security Rules**
-   - Go to Realtime Database → Rules tab
-   - Copy content from `config/firebase-security-rules.json`
-   - Paste and click "Publish"
-
-5. **Update Firebase Config**
+4. **Update Firebase Config**
    - Get your config from Project Settings → General
    - Update `config/firebase-config.js` with your values
 
-6. **Add Authorized Domains**
+5. **Add Authorized Domains**
    - Go to Authentication → Settings → Authorized domains
    - Add your GitHub Pages domain: `username.github.io`
 
 **That's it!** Your Firebase backend is ready. Now deploy to GitHub Pages.
 
-**Note:** Firebase API keys are safe to commit to Git. Security is enforced by Firebase Rules, not API key secrecy. See: https://firebase.google.com/docs/projects/api-keys
-
----
-
-### Alternative: Firebase CLI Deployment
-
-If you prefer command-line deployment of security rules:
-
-```bash
-# Install Firebase CLI globally (one-time)
-npm install -g firebase-tools
-
-# Login to Firebase
-firebase login
-
-# Deploy security rules only
-firebase deploy --only database
-```
-
-This is equivalent to manually pasting rules in Firebase Console.
+**Note:** Firebase API keys are safe to commit to Git. See: https://firebase.google.com/docs/projects/api-keys
 
 ## 📊 Monitoring
 
@@ -301,7 +225,6 @@ This is equivalent to manually pasting rules in Firebase Console.
 Monitor your game's usage:
 - **Database Usage** - Reads, writes, bandwidth
 - **Authentication** - Active users
-- **Security Rules** - Denied operations
 
 ### Set Billing Alerts
 
@@ -320,22 +243,18 @@ Most indie games stay well within free tier limits.
 ## 🐛 Troubleshooting
 
 ### "Permission Denied" Errors
-- **Cause**: Security rules not deployed
-- **Fix**: Deploy rules via Firebase Console or CLI
+- **Cause**: Database security configuration
+- **Fix**: Check Firebase Console database rules
 
 ### PeerJS Connection Issues
 - **Cause**: Firewall or NAT traversal problems
 - **Fix**: Ensure HTTPS is enabled, test on different networks
 
-### Rate Limit Not Working
-- **Cause**: Rules not applied or clock skew
-- **Fix**: Check `user_cooldowns` node in Firebase Console
-
 ### Scores Not Appearing
-- **Cause**: Authentication failed or validation error
+- **Cause**: Authentication failed or database error
 - **Fix**: Check browser console for error messages
 
-**See `DEPLOYMENT.md` for more troubleshooting tips.**
+**See `GITHUB-PAGES-SETUP.md` for more troubleshooting tips.**
 
 ## 🔐 Security Notes
 
@@ -439,7 +358,6 @@ Contributions welcome! Areas for improvement:
 - [ ] Replay system
 - [ ] Tournament mode
 - [ ] Custom skins/themes
-- [x] Server-side validation (Cloud Functions) - ✅ Implemented as optional feature
 
 ## 🌐 Browser Compatibility
 
@@ -457,8 +375,7 @@ Contributions welcome! Areas for improvement:
 
 ## 📞 Support
 
-- **Security Issues**: See `SECURITY.md`
-- **Deployment Help**: See `DEPLOYMENT.md`
+- **Deployment Help**: See `GITHUB-PAGES-SETUP.md`
 - **Firebase Docs**: https://firebase.google.com/docs
 - **PeerJS Docs**: https://peerjs.com/docs.html
 
@@ -467,13 +384,12 @@ Contributions welcome! Areas for improvement:
 **Game Design**: NEON REBOUND Team
 **Firebase**: Google
 **PeerJS**: PeerJS Community
-**Security Review**: March 2026
 
 ---
 
 **Made with ❤️ and lots of ☕**
 
 **Status**: Production Ready ✅
-**Last Updated**: March 5, 2026
+**Last Updated**: March 6, 2026
 **Version**: 1.0.0
 
