@@ -6,6 +6,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getDatabase, ref, onValue, query, orderByChild, equalTo, remove, get, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-functions.js";
 import { firebaseConfig } from "../config/firebase-config.js";
 
 // ============================================
@@ -18,11 +19,68 @@ const SECURITY_CONFIG = {
     MIN_SEED_LENGTH: 1,
     MIN_SCORE: 10,
     MAX_SCORE: 100000,
-    SUBMISSION_COOLDOWN_MS: 5000,
+    SUBMISSION_COOLDOWN_MS: 30000, // Increased to 30 seconds
     MAX_PEER_CONNECTIONS: 8,
     ALLOWED_SEED_PATTERN: /^[A-Za-z0-9_-]+$/,
     ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/
 };
+
+// ============================================
+// ANTI-CHEAT FUNCTIONS
+// ============================================
+
+/**
+ * Generates a SHA-256 checksum for score validation
+ * @param {string} name - Player name
+ * @param {number} score - Score value
+ * @param {string} seed - Game seed
+ * @param {Object} telemetry - Game telemetry data
+ * @param {string} uid - User ID
+ * @returns {Promise<string>} Hex string checksum
+ */
+async function generateScoreChecksum(name, score, seed, telemetry, uid) {
+    const data = `${name}|${score}|${seed}|${telemetry.jumps}|${telemetry.platforms}|${telemetry.duration}|${telemetry.integrityToken}|${uid}`;
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Validates telemetry data for reasonableness
+ * @param {number} score - Score value
+ * @param {Object} telemetry - Game telemetry data
+ * @returns {boolean} True if telemetry is reasonable
+ */
+function validateTelemetry(score, telemetry) {
+    // Basic sanity checks
+    if (telemetry.jumps < 1 || telemetry.platforms < 1) return false;
+    if (telemetry.duration < 1 || telemetry.duration > 3600) return false;
+
+    // Score should roughly correlate with platforms (score ~= platforms * 8)
+    const expectedMinPlatforms = Math.floor(score / 12);
+    const expectedMaxPlatforms = Math.ceil(score / 5);
+    if (telemetry.platforms < expectedMinPlatforms || telemetry.platforms > expectedMaxPlatforms) {
+        console.warn(`⚠️ Telemetry mismatch: score=${score}, platforms=${telemetry.platforms}`);
+        return false;
+    }
+
+    // Jumps should equal platforms (one jump per platform)
+    if (Math.abs(telemetry.jumps - telemetry.platforms) > 10) {
+        console.warn(`⚠️ Jump/platform mismatch: jumps=${telemetry.jumps}, platforms=${telemetry.platforms}`);
+        return false;
+    }
+
+    // Max score rate: ~200 points/second (very generous)
+    const maxPossibleScore = telemetry.duration * 200;
+    if (score > maxPossibleScore) {
+        console.warn(`⚠️ Score too high for duration: ${score} in ${telemetry.duration}s`);
+        return false;
+    }
+
+    return true;
+}
 
 // ============================================
 // INPUT SANITIZATION FUNCTIONS
@@ -102,6 +160,10 @@ export function renderLeaderboardRow(entry, index, isTopRank = false) {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth();
+const functions = getFunctions(app);
+
+// Enable Cloud Functions for enhanced security (optional, requires Blaze plan)
+const USE_CLOUD_FUNCTIONS = false; // Set to true to use Cloud Functions validation
 
 window.seedTop1Score = 0;
 window.seedTop10Score = 0;
@@ -200,7 +262,7 @@ window.applyGlobalSeed = function(s) {
 };
 window.closeGlobalModal = function() { document.getElementById('global-highscore-modal').style.display = 'none'; };
 
-window.submitGlobalScore = async function(n, s, seed) {
+window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
     const user = auth.currentUser;
     if (!user) {
         console.warn("⚠️ Not authenticated");
@@ -227,9 +289,40 @@ window.submitGlobalScore = async function(n, s, seed) {
         return false;
     }
 
+    // Validate telemetry data
+    if (!telemetry || !validateTelemetry(s, telemetry)) {
+        console.warn("⚠️ Invalid or missing telemetry data");
+        return false;
+    }
+
     try {
-        // Write directly to Firebase Realtime Database
-        // Security is enforced by Firebase Security Rules
+        // Generate anti-cheat checksum
+        const checksum = await generateScoreChecksum(sanitizedName, s, sanitizedSeed, telemetry, user.uid);
+
+        // OPTION 1: Use Cloud Functions for enhanced server-side validation (requires Blaze plan)
+        if (USE_CLOUD_FUNCTIONS) {
+            const submitScoreFunction = httpsCallable(functions, 'submitScore');
+            const result = await submitScoreFunction({
+                name: sanitizedName,
+                score: Math.floor(s),
+                seed: sanitizedSeed,
+                checksum: checksum,
+                telemetry: {
+                    jumps: telemetry.jumps,
+                    platforms: telemetry.platforms,
+                    duration: telemetry.duration,
+                    maxFall: telemetry.maxFall,
+                    integrityToken: telemetry.integrityToken
+                },
+                events: telemetry.events
+            });
+
+            console.log(`✅ Score submitted via Cloud Functions: ${sanitizedName} - ${s} points on ${sanitizedSeed}`);
+            console.log(`📊 Telemetry: ${telemetry.jumps} jumps, ${telemetry.platforms} platforms, ${telemetry.duration}s`);
+            return true;
+        }
+
+        // OPTION 2: Direct database write with Firebase Security Rules validation (free tier)
         const highscoresRef = ref(db, 'highscores');
         const newScoreRef = push(highscoresRef);
 
@@ -238,14 +331,35 @@ window.submitGlobalScore = async function(n, s, seed) {
             score: Math.floor(s), // Ensure integer
             seed: sanitizedSeed,
             timestamp: serverTimestamp(),
-            uid: user.uid
+            uid: user.uid,
+            checksum: checksum,
+            telemetry: {
+                jumps: telemetry.jumps,
+                platforms: telemetry.platforms,
+                duration: telemetry.duration,
+                maxFall: telemetry.maxFall
+            }
         });
+
+        // Store detailed telemetry for audit (optional, 7-day retention)
+        if (telemetry.events && telemetry.events.length > 0) {
+            const telemetryRef = ref(db, `score_telemetry/${newScoreRef.key}`);
+            await set(telemetryRef, {
+                uid: user.uid,
+                seed: sanitizedSeed,
+                score: Math.floor(s),
+                events: telemetry.events,
+                integrityToken: telemetry.integrityToken,
+                timestamp: serverTimestamp()
+            });
+        }
 
         // Update cooldown timestamp
         const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
         await set(cooldownRef, serverTimestamp());
 
         console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed} (ID: ${newScoreRef.key})`);
+        console.log(`📊 Telemetry: ${telemetry.jumps} jumps, ${telemetry.platforms} platforms, ${telemetry.duration}s`);
         return true;
     } catch (error) {
         console.error("❌ Score submission failed:", error);
@@ -254,8 +368,18 @@ window.submitGlobalScore = async function(n, s, seed) {
         if (error.code === 'PERMISSION_DENIED') {
             // Check common causes
             if (error.message && error.message.includes('cooldown')) {
-                console.warn("⚠️ Rate limit: Please wait 5 seconds between submissions");
-                showCooldownMessage();
+                console.warn("⚠️ Rate limit: Please wait 30 seconds between submissions");
+                showCooldownMessage(30);
+            } else {
+                console.warn("⚠️ Permission denied. Check authentication or data validation.");
+            }
+        } else {
+            console.warn("⚠️ Submission error. Please try again.");
+        }
+
+        return false;
+    }
+};
             } else {
                 console.warn("⚠️ Permission denied. Check authentication or data validation.");
             }
@@ -270,12 +394,12 @@ window.submitGlobalScore = async function(n, s, seed) {
 /**
  * Shows cooldown message to user
  */
-function showCooldownMessage() {
+function showCooldownMessage(seconds = 30) {
     const overlay = document.getElementById('overlay');
     if (overlay && overlay.style.display === 'flex') {
         const cooldownMsg = document.createElement('div');
         cooldownMsg.style.cssText = 'color: var(--warning); font-size: 12px; margin-top: 10px;';
-        cooldownMsg.textContent = '⏱ COOLDOWN: Wait 5s between submissions';
+        cooldownMsg.textContent = `⏱ COOLDOWN: Wait ${seconds}s between submissions`;
         overlay.appendChild(cooldownMsg);
         setTimeout(() => cooldownMsg.remove(), 3000);
     }
@@ -291,8 +415,19 @@ window.testSubmitScore = function(name, score, seed) {
     score = score || 100;
     seed = seed || document.getElementById('seed-input').value || "MISSION_1";
 
+    // Generate mock telemetry
+    const mockTelemetry = {
+        jumps: Math.floor(score / 8),
+        platforms: Math.floor(score / 8),
+        duration: Math.floor(score / 10) + 5,
+        maxFall: 300,
+        events: [],
+        integrityToken: Math.floor(Math.random() * 1000000)
+    };
+
     console.log(`🧪 Testing score submission: ${name} - ${score} on ${seed}`);
-    window.submitGlobalScore(name, score, seed);
+    console.log(`📊 Mock telemetry:`, mockTelemetry);
+    window.submitGlobalScore(name, score, seed, mockTelemetry);
 
     // Wait and update sidebar
     setTimeout(() => {
