@@ -3,7 +3,7 @@
  * Handles UI interactions, menu controls, and user input
  */
 
-import { sanitizeName, sanitizeSeed } from './firebase-manager.js';
+import { sanitizeName, sanitizeSeed, createGameChallenge } from './firebase-manager.js';
 import { player } from './game-engine.js';
 import { connectToPeer, copyMyID, kickPlayer, sendStartGame, sendBackToLobby, isHost } from './multiplayer.js';
 
@@ -38,9 +38,9 @@ export function onSeedInputChange() {
 }
 
 /**
- * Requests game start
+ * Requests game start — creates an anti-cheat challenge before launching
  */
-export function requestStart() {
+export async function requestStart() {
     if (!player.name || player.name.length < 2) {
         document.getElementById('name-warning').style.display = 'block';
         return;
@@ -49,8 +49,15 @@ export function requestStart() {
     let seed = document.getElementById('seed-input').value || "MISSION_1";
     seed = sanitizeSeed(seed) || "MISSION_1";
 
+    // Create a one-time-use challenge nonce BEFORE the game starts
+    // The server will verify this challenge exists and is unused when the score is submitted
+    const challengeId = await createGameChallenge();
+    if (!challengeId) {
+        console.warn("⚠️ Failed to create game challenge — game will start but scores may not submit");
+    }
+
     sendStartGame(seed);
-    window.initGame(seed);
+    window.initGame(seed, challengeId);
 }
 
 /**

@@ -23,7 +23,10 @@ const SECURITY_CONFIG = {
     MAX_PEER_CONNECTIONS: 8,
     ALLOWED_SEED_PATTERN: /^[A-Za-z0-9_-]+$/,
     ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/,
-    MAX_SCORES_PER_USER: 500
+    MAX_SCORES_PER_USER: 500,
+    MAX_SCORES_PER_SEED: 10,
+    MAX_SCORE_RATE: 100, // max points per second (tightened from 200)
+    CHALLENGE_MAX_AGE_MS: 3600000 // 1 hour max game duration for challenge validity
 };
 
 // ============================================
@@ -37,12 +40,13 @@ const SECURITY_CONFIG = {
  * @param {string} seed - Game seed
  * @param {Object} telemetry - Game telemetry data
  * @param {string} uid - User ID
- * @returns {Promise<string>} Hex string checksum
+ * @param {string} challengeId - Unique challenge nonce (one-time-use)
+ * @returns {Promise<string>} 64-char hex string checksum (SHA-256)
  */
-async function generateScoreChecksum(name, score, seed, telemetry, uid) {
-    const data = `${name}|${score}|${seed}|${telemetry.jumps}|${telemetry.platforms}|${telemetry.duration}|${telemetry.integrityToken}|${uid}`;
+async function generateScoreChecksum(name, score, seed, telemetry, uid, challengeId) {
+    const data = `${challengeId}|${name}|${score}|${seed}|${telemetry.jumps}|${telemetry.platforms}|${telemetry.duration}|${telemetry.integrityToken}|${uid}`;
 
-    // Check if crypto.subtle is available (HTTPS or localhost only)
+    // Require crypto.subtle (HTTPS or localhost) — no weak fallback
     if (window.crypto && window.crypto.subtle) {
         try {
             const encoder = new TextEncoder();
@@ -51,19 +55,13 @@ async function generateScoreChecksum(name, score, seed, telemetry, uid) {
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         } catch (error) {
-            console.warn('⚠️ crypto.subtle failed, using fallback hash:', error);
+            console.error('❌ crypto.subtle failed:', error);
         }
     }
 
-    // Fallback: Simple hash function for non-secure contexts
-    // Note: This is NOT cryptographically secure, but provides basic integrity checking
-    let hash = 0;
-    for (let i = 0; i < data.length; i++) {
-        const char = data.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(16).padStart(8, '0');
+    // No fallback — SHA-256 is required for score submission
+    console.error('❌ SHA-256 not available. Score submission requires HTTPS or localhost.');
+    throw new Error('SHA-256 required for score submission. Please use HTTPS.');
 }
 
 /**
@@ -94,10 +92,24 @@ export function validateTelemetry(score, telemetry) {
         return false;
     }
 
-    // Max score rate: ~200 points/second (very generous)
-    const maxPossibleScore = telemetry.duration * 200;
+    // Max score rate: points per second (server rule: score <= duration * 100)
+    const maxPossibleScore = telemetry.duration * SECURITY_CONFIG.MAX_SCORE_RATE;
     if (score > maxPossibleScore) {
-        console.warn(`⚠️ Score too high for duration: ${score} in ${telemetry.duration}s`);
+        console.warn(`⚠️ Score too high for duration: ${score} in ${telemetry.duration}s (max ${maxPossibleScore})`);
+        return false;
+    }
+
+    // Minimum duration proportional to score (server rule: duration >= score / 100)
+    const minDuration = Math.ceil(score / SECURITY_CONFIG.MAX_SCORE_RATE);
+    if (telemetry.duration < minDuration) {
+        console.warn(`⚠️ Duration too short for score: ${telemetry.duration}s for score ${score} (min ${minDuration}s)`);
+        return false;
+    }
+
+    // Minimum jumps proportional to score (server rule: jumps >= score / 20)
+    const minJumps = Math.ceil(score / 20);
+    if (telemetry.jumps < minJumps) {
+        console.warn(`⚠️ Too few jumps for score: ${telemetry.jumps} for score ${score} (min ${minJumps})`);
         return false;
     }
 
@@ -155,9 +167,75 @@ export function validateScore(score) {
     return score >= SECURITY_CONFIG.MIN_SCORE && score <= SECURITY_CONFIG.MAX_SCORE;
 }
 
-// Note: Rate limiting is now handled server-side by Cloud Functions
-// Client-side checks removed to prevent redundant validation
-// The Cloud Function enforces 5-second cooldown at the database level
+// ============================================
+// CHALLENGE TOKEN SYSTEM (Anti-Replay)
+// ============================================
+
+/**
+ * Creates a one-time-use challenge token before a game starts.
+ * The challenge must exist and be unused for the score submission to be accepted.
+ * Challenges expire after 1 hour (enforced server-side).
+ * @returns {Promise<string|null>} Challenge ID or null if creation failed
+ */
+export async function createGameChallenge() {
+    const user = auth.currentUser;
+    if (!user) {
+        console.warn("⚠️ Cannot create challenge: not authenticated");
+        return null;
+    }
+
+    try {
+        // Generate a unique challenge ID (crypto.randomUUID or fallback)
+        const challengeId = (crypto.randomUUID && crypto.randomUUID()) ||
+            ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+                (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+            );
+
+        const challengeRef = ref(db, `score_challenges/${user.uid}/${challengeId}`);
+        await set(challengeRef, {
+            createdAt: serverTimestamp(),
+            used: false
+        });
+
+        console.log(`🎫 Challenge created: ${challengeId}`);
+        return challengeId;
+    } catch (error) {
+        console.error("❌ Failed to create challenge:", error);
+        return null;
+    }
+}
+
+/**
+ * Marks a challenge token as used after successful score submission.
+ * Prevents the same challenge from being reused.
+ * @param {string} challengeId - The challenge ID to mark as used
+ * @returns {Promise<boolean>} True if marked successfully
+ */
+async function markChallengeUsed(challengeId) {
+    const user = auth.currentUser;
+    if (!user || !challengeId) return false;
+
+    try {
+        const challengeRef = ref(db, `score_challenges/${user.uid}/${challengeId}`);
+        const snap = await get(challengeRef);
+        if (!snap.exists()) {
+            console.warn("⚠️ Challenge not found:", challengeId);
+            return false;
+        }
+
+        // Preserve createdAt, only flip used to true
+        await set(challengeRef, {
+            createdAt: snap.val().createdAt,
+            used: true
+        });
+
+        console.log(`🎫 Challenge marked as used: ${challengeId}`);
+        return true;
+    } catch (error) {
+        console.error("❌ Failed to mark challenge as used:", error);
+        return false;
+    }
+}
 
 /**
  * Renders a leaderboard row with rank, name, and score
@@ -301,6 +379,14 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         return false;
     }
 
+    // Validate challenge ID (must be created before game started)
+    const challengeId = telemetry?.challengeId;
+    if (!challengeId || typeof challengeId !== 'string' || challengeId.length < 20) {
+        console.warn("⚠️ Missing or invalid challenge ID — score rejected");
+        showValidationError('Score rejected: no valid game challenge. Please restart the game.');
+        return false;
+    }
+
     // Sanitize and validate name (client-side pre-check for better UX)
     const sanitizedName = sanitizeName(n);
     if (!sanitizedName) {
@@ -328,8 +414,8 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
     }
 
     try {
-        // Generate anti-cheat checksum
-        const checksum = await generateScoreChecksum(sanitizedName, s, sanitizedSeed, telemetry, user.uid);
+        // Generate anti-cheat checksum (bound to challengeId nonce)
+        const checksum = await generateScoreChecksum(sanitizedName, s, sanitizedSeed, telemetry, user.uid, challengeId);
 
         // OPTION 1: Use Cloud Functions for enhanced server-side validation (requires Blaze plan)
         if (USE_CLOUD_FUNCTIONS) {
@@ -373,6 +459,26 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             return false;
         }
 
+        // 1b. Read current per-seed score count (for per-seed rate limiting)
+        const seedCountRef = ref(db, `user_seed_count/${user.uid}/${sanitizedSeed}`);
+        const seedCountSnap = await get(seedCountRef);
+        const currentSeedCount = seedCountSnap.exists() ? seedCountSnap.val() : 0;
+
+        if (currentSeedCount >= SECURITY_CONFIG.MAX_SCORES_PER_SEED) {
+            console.warn(`⚠️ Per-seed limit reached (${SECURITY_CONFIG.MAX_SCORES_PER_SEED} submissions on seed "${sanitizedSeed}")`);
+            showValidationError(`Maximum submissions for seed "${sanitizedSeed}" reached (${SECURITY_CONFIG.MAX_SCORES_PER_SEED}). Try a different seed.`);
+            return false;
+        }
+
+        // 1c. Verify challenge exists and is unused
+        const challengeRef = ref(db, `score_challenges/${user.uid}/${challengeId}`);
+        const challengeSnap = await get(challengeRef);
+        if (!challengeSnap.exists() || challengeSnap.val().used !== false) {
+            console.warn("⚠️ Challenge is missing or already used:", challengeId);
+            showValidationError('Score rejected: game challenge expired or already used.');
+            return false;
+        }
+
         // 2. Check cooldown before attempting the write
         const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
         const cooldownSnap = await get(cooldownRef);
@@ -404,6 +510,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             timestamp: serverTimestamp(),
             uid: user.uid,
             checksum: checksum,
+            challengeId: challengeId,
             telemetry: {
                 jumps: floorJumps,
                 platforms: floorPlatforms,
@@ -442,8 +549,12 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             console.warn(`⚠️ Pre-check fail: seed "${sanitizedSeed}" doesn't match allowed pattern`);
             preCheckFailed = true;
         }
-        if (typeof checksum !== 'string' || (checksum.length !== 64 && checksum.length !== 8)) {
-            console.warn(`⚠️ Pre-check fail: checksum length=${checksum?.length} (must be 64 or 8)`);
+        if (typeof checksum !== 'string' || checksum.length !== 64) {
+            console.warn(`⚠️ Pre-check fail: checksum length=${checksum?.length} (must be 64 — SHA-256 required)`);
+            preCheckFailed = true;
+        }
+        if (typeof challengeId !== 'string' || challengeId.length < 20 || challengeId.length > 36) {
+            console.warn(`⚠️ Pre-check fail: challengeId length=${challengeId?.length} (must be 20-36)`);
             preCheckFailed = true;
         }
 
@@ -465,9 +576,17 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             preCheckFailed = true;
         }
 
-        // Correlation checks
-        if (floorScore > floorDuration * 200) {
-            console.warn(`⚠️ Pre-check fail: score(${floorScore}) > duration(${floorDuration}) * 200 = ${floorDuration * 200}`);
+        // Correlation checks (match tightened server rules)
+        if (floorScore > floorDuration * SECURITY_CONFIG.MAX_SCORE_RATE) {
+            console.warn(`⚠️ Pre-check fail: score(${floorScore}) > duration(${floorDuration}) * ${SECURITY_CONFIG.MAX_SCORE_RATE} = ${floorDuration * SECURITY_CONFIG.MAX_SCORE_RATE}`);
+            preCheckFailed = true;
+        }
+        if (floorDuration < Math.ceil(floorScore / SECURITY_CONFIG.MAX_SCORE_RATE)) {
+            console.warn(`⚠️ Pre-check fail: duration(${floorDuration}) < score(${floorScore}) / ${SECURITY_CONFIG.MAX_SCORE_RATE}`);
+            preCheckFailed = true;
+        }
+        if (floorJumps < Math.ceil(floorScore / 20)) {
+            console.warn(`⚠️ Pre-check fail: jumps(${floorJumps}) < score(${floorScore}) / 20 = ${Math.ceil(floorScore / 20)}`);
             preCheckFailed = true;
         }
         if ((floorPlatforms + 5) * 15 < floorScore) {
@@ -497,6 +616,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 
         // Score count check
         console.log(`🔍 Score count: ${currentCount} / ${SECURITY_CONFIG.MAX_SCORES_PER_USER}`);
+        console.log(`🔍 Seed score count (${sanitizedSeed}): ${currentSeedCount} / ${SECURITY_CONFIG.MAX_SCORES_PER_SEED}`);
 
         if (preCheckFailed) {
             console.warn('⚠️ Score would be rejected by security rules — aborting submission');
@@ -508,6 +628,12 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 
         // 4. Increment the per-user score count (rules enforce +1 atomicity)
         await set(scoreCountRef, currentCount + 1);
+
+        // 4b. Increment the per-seed score count (rules enforce +1 atomicity, max 10)
+        await set(seedCountRef, currentSeedCount + 1);
+
+        // 4c. Mark the challenge as used (prevents replay)
+        await markChallengeUsed(challengeId);
 
         // 5. Store detailed telemetry for audit (optional, 7-day retention)
         if (telemetry.events && telemetry.events.length > 0) {
@@ -555,10 +681,12 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         } else if (error.code === 'PERMISSION_DENIED' || (error.message && error.message.includes('Permission denied'))) {
             // Handle Firebase Security Rules rejections
             console.warn("⚠️ Permission denied by Firebase Security Rules. Possible causes:");
+            console.warn("   - Challenge ID missing, expired, or already used");
             console.warn("   - Cooldown not elapsed (5s between submissions)");
-            console.warn("   - Score count limit reached (max 500 per user)");
+            console.warn("   - Score count limit reached (max 500 per user, 10 per seed)");
             console.warn("   - Telemetry-score correlation mismatch");
             console.warn("   - Invalid data format or extra fields");
+            console.warn("   - SHA-256 checksum required (64 chars)");
             console.warn("   - Security rules not deployed (run deploy-rules.bat)");
             showValidationError("Score rejected by server validation. Please wait and try again.");
             showCooldownMessage(Math.ceil(SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS / 1000));

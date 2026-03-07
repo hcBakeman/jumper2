@@ -3,7 +3,7 @@
  * Handles PeerJS connections, lobby management, and multiplayer state
  */
 
-import { sanitizeName, sanitizeSeed } from './firebase-manager.js';
+import { sanitizeName, sanitizeSeed, createGameChallenge } from './firebase-manager.js';
 
 const peer = new Peer();
 let conns = [], hostConn = null;
@@ -212,7 +212,10 @@ export function connectToPeer(player) {
             if(data.type === 'start') {
                 const safeSeed = sanitizeSeed(data.seed);
                 if (safeSeed) {
-                    window.initGame(safeSeed);
+                    // Guest also needs a challenge for their own score submission
+                    createGameChallenge().then(challengeId => {
+                        window.initGame(safeSeed, challengeId);
+                    });
                 }
             }
             if(data.type === 'opp_pos') {

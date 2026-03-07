@@ -19,7 +19,8 @@ export let gameTelemetry = {
     gameStartTime: 0,
     lastJumpY: 0,
     events: [],
-    integrityToken: 0
+    integrityToken: 0,
+    challengeId: null
 };
 
 window.player = player;
@@ -53,7 +54,7 @@ function generatePlatform(y, isFirst = false) {
     platforms.push({ x, worldY: y, w, el, mvSpeed, seedOffset: rand * 10 });
 }
 
-export function initGame(seed) {
+export function initGame(seed, challengeId = null) {
     globalSeed = seed.split('').reduce((a,b) => (a << 5) - a + b.charCodeAt(0), 0);
     isRunning = true;
     isGameOver = false;
@@ -78,6 +79,7 @@ export function initGame(seed) {
     gameTelemetry.lastJumpY = 0;
     gameTelemetry.events = [];
     gameTelemetry.integrityToken = Math.floor(Math.random() * 1000000);
+    gameTelemetry.challengeId = challengeId; // One-time-use nonce for anti-replay
 
     document.querySelectorAll('.platform').forEach(p => p.remove());
     for(let id in opponents) {
@@ -181,7 +183,8 @@ function updateLogic(dt) {
                     duration: duration,
                     maxFall: Math.floor(gameTelemetry.maxFallDistance),
                     events: gameTelemetry.events.slice(0, 100), // Send first 100 events
-                    integrityToken: gameTelemetry.integrityToken
+                    integrityToken: gameTelemetry.integrityToken,
+                    challengeId: gameTelemetry.challengeId
                 });
             } else {
                 console.warn('⚠️ Invalid final score, not submitting:', finalScore);
