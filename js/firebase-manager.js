@@ -4,7 +4,7 @@
  */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, onValue, query, orderByChild, equalTo, push, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getDatabase, ref, onValue, query, orderByChild, equalTo, push, set, get, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-functions.js";
 import { firebaseConfig } from "../config/firebase-config.js";
@@ -22,7 +22,8 @@ const SECURITY_CONFIG = {
     SUBMISSION_COOLDOWN_MS: 30000, // Increased to 30 seconds
     MAX_PEER_CONNECTIONS: 8,
     ALLOWED_SEED_PATTERN: /^[A-Za-z0-9_-]+$/,
-    ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/
+    ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/,
+    MAX_SCORES_PER_USER: 500
 };
 
 // ============================================
@@ -361,6 +362,19 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         }
 
         // OPTION 2: Direct database write with Firebase Security Rules validation (free tier)
+
+        // 1. Read current score count for this user (for increment)
+        const scoreCountRef = ref(db, `user_score_count/${user.uid}`);
+        const countSnap = await get(scoreCountRef);
+        const currentCount = countSnap.exists() ? countSnap.val() : 0;
+
+        if (currentCount >= SECURITY_CONFIG.MAX_SCORES_PER_USER) {
+            console.warn(`⚠️ Score limit reached (${SECURITY_CONFIG.MAX_SCORES_PER_USER} submissions)`);
+            showValidationError(`Maximum score submissions reached (${SECURITY_CONFIG.MAX_SCORES_PER_USER}). Contact admin.`);
+            return false;
+        }
+
+        // 2. Write the score entry
         const highscoresRef = ref(db, 'highscores');
         const newScoreRef = push(highscoresRef);
 
@@ -372,14 +386,17 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             uid: user.uid,
             checksum: checksum,
             telemetry: {
-                jumps: telemetry.jumps,
-                platforms: telemetry.platforms,
-                duration: telemetry.duration,
-                maxFall: telemetry.maxFall
+                jumps: Math.floor(telemetry.jumps),
+                platforms: Math.floor(telemetry.platforms),
+                duration: Math.floor(telemetry.duration),
+                maxFall: Math.floor(telemetry.maxFall)
             }
         });
 
-        // Store detailed telemetry for audit (optional, 7-day retention)
+        // 3. Increment the per-user score count (rules enforce +1 atomicity)
+        await set(scoreCountRef, currentCount + 1);
+
+        // 4. Store detailed telemetry for audit (optional, 7-day retention)
         if (telemetry.events && telemetry.events.length > 0) {
             const telemetryRef = ref(db, `score_telemetry/${newScoreRef.key}`);
             await set(telemetryRef, {
@@ -392,7 +409,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             });
         }
 
-        // Update cooldown timestamp
+        // 5. Update cooldown timestamp
         const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
         await set(cooldownRef, serverTimestamp());
 
@@ -424,13 +441,14 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
                     console.warn(`⚠️ Submission error: ${error.message || 'Please try again'}`);
             }
         } else if (error.code === 'PERMISSION_DENIED') {
-            // Handle Firebase Security Rules errors
-            if (error.message && error.message.includes('cooldown')) {
-                console.warn("⚠️ Rate limit: Please wait 30 seconds between submissions");
-                showCooldownMessage(30);
-            } else {
-                console.warn("⚠️ Permission denied. Check authentication or data validation.");
-            }
+            // Handle Firebase Security Rules rejections
+            console.warn("⚠️ Permission denied by Firebase Security Rules. Possible causes:");
+            console.warn("   - Cooldown not elapsed (30s between submissions)");
+            console.warn("   - Score count limit reached (max 500 per user)");
+            console.warn("   - Telemetry-score correlation mismatch");
+            console.warn("   - Invalid data format or extra fields");
+            showValidationError("Score rejected by server validation. Please wait and try again.");
+            showCooldownMessage(30);
         } else {
             console.warn("⚠️ Submission error. Please try again.");
         }
