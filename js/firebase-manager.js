@@ -391,18 +391,24 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         const highscoresRef = ref(db, 'highscores');
         const newScoreRef = push(highscoresRef);
 
+        const floorScore = Math.floor(s);
+        const floorDuration = Math.floor(telemetry.duration) || 1; // Ensure minimum 1
+        const floorPlatforms = Math.floor(telemetry.platforms) || 1; // Ensure minimum 1
+        const floorJumps = Math.floor(telemetry.jumps) || 1; // Ensure minimum 1
+        const floorMaxFall = Math.min(1000, Math.max(0, Math.floor(telemetry.maxFall) || 0)); // Ensure 0-1000, guard against NaN
+
         const scoreData = {
             name: sanitizedName,
-            score: Math.floor(s), // Ensure integer
+            score: floorScore,
             seed: sanitizedSeed,
             timestamp: serverTimestamp(),
             uid: user.uid,
             checksum: checksum,
             telemetry: {
-                jumps: Math.floor(telemetry.jumps),
-                platforms: Math.floor(telemetry.platforms),
-                duration: Math.floor(telemetry.duration),
-                maxFall: Math.min(1000, Math.floor(telemetry.maxFall))
+                jumps: floorJumps,
+                platforms: floorPlatforms,
+                duration: floorDuration,
+                maxFall: floorMaxFall
             }
         };
 
@@ -412,13 +418,54 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             timestamp: '<serverTimestamp>'
         }, null, 2));
 
-        // Validate correlation checks client-side (mirror security rules)
-        const floorScore = Math.floor(s);
-        const floorDuration = Math.floor(telemetry.duration);
-        const floorPlatforms = Math.floor(telemetry.platforms);
-        const floorJumps = Math.floor(telemetry.jumps);
+        // ---- Comprehensive pre-check mirroring EVERY security rule condition ----
         let preCheckFailed = false;
 
+        // Field type/range checks (mirror security rules exactly)
+        if (typeof sanitizedName !== 'string' || sanitizedName.length < 1 || sanitizedName.length > 20) {
+            console.warn(`⚠️ Pre-check fail: name length=${sanitizedName?.length} (must be 1-20)`);
+            preCheckFailed = true;
+        }
+        if (!/^[A-Za-z0-9_\-\s]+$/.test(sanitizedName)) {
+            console.warn(`⚠️ Pre-check fail: name "${sanitizedName}" doesn't match allowed pattern`);
+            preCheckFailed = true;
+        }
+        if (floorScore < 1 || floorScore > 100000 || floorScore % 1 !== 0) {
+            console.warn(`⚠️ Pre-check fail: score=${floorScore} (must be integer 1-100000)`);
+            preCheckFailed = true;
+        }
+        if (typeof sanitizedSeed !== 'string' || sanitizedSeed.length < 1 || sanitizedSeed.length > 50) {
+            console.warn(`⚠️ Pre-check fail: seed length=${sanitizedSeed?.length} (must be 1-50)`);
+            preCheckFailed = true;
+        }
+        if (!/^[A-Za-z0-9_\-]+$/.test(sanitizedSeed)) {
+            console.warn(`⚠️ Pre-check fail: seed "${sanitizedSeed}" doesn't match allowed pattern`);
+            preCheckFailed = true;
+        }
+        if (typeof checksum !== 'string' || (checksum.length !== 64 && checksum.length !== 8)) {
+            console.warn(`⚠️ Pre-check fail: checksum length=${checksum?.length} (must be 64 or 8)`);
+            preCheckFailed = true;
+        }
+
+        // Telemetry range checks
+        if (floorJumps < 1 || floorJumps > 10000) {
+            console.warn(`⚠️ Pre-check fail: jumps=${floorJumps} (must be 1-10000)`);
+            preCheckFailed = true;
+        }
+        if (floorPlatforms < 1 || floorPlatforms > 10000) {
+            console.warn(`⚠️ Pre-check fail: platforms=${floorPlatforms} (must be 1-10000)`);
+            preCheckFailed = true;
+        }
+        if (floorDuration < 1 || floorDuration > 3600) {
+            console.warn(`⚠️ Pre-check fail: duration=${floorDuration} (must be 1-3600)`);
+            preCheckFailed = true;
+        }
+        if (floorMaxFall < 0 || floorMaxFall > 1000) {
+            console.warn(`⚠️ Pre-check fail: maxFall=${floorMaxFall} (must be 0-1000)`);
+            preCheckFailed = true;
+        }
+
+        // Correlation checks
         if (floorScore > floorDuration * 200) {
             console.warn(`⚠️ Pre-check fail: score(${floorScore}) > duration(${floorDuration}) * 200 = ${floorDuration * 200}`);
             preCheckFailed = true;
@@ -436,9 +483,24 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             preCheckFailed = true;
         }
 
+        // Cooldown check (client-side approximation — server uses its own clock)
+        if (cooldownSnap.exists()) {
+            const serverCooldownAge = Date.now() - cooldownSnap.val();
+            console.log(`🔍 Cooldown age (client estimate): ${serverCooldownAge}ms (rule requires > 5000ms)`);
+            if (serverCooldownAge < SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS) {
+                console.warn(`⚠️ Pre-check fail: cooldown not elapsed (${serverCooldownAge}ms < ${SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS}ms)`);
+                preCheckFailed = true;
+            }
+        } else {
+            console.log('🔍 No cooldown entry — first submission for this user');
+        }
+
+        // Score count check
+        console.log(`🔍 Score count: ${currentCount} / ${SECURITY_CONFIG.MAX_SCORES_PER_USER}`);
+
         if (preCheckFailed) {
             console.warn('⚠️ Score would be rejected by security rules — aborting submission');
-            showValidationError('Score data failed anti-cheat correlation checks. Not submitted.');
+            showValidationError('Score data failed anti-cheat validation checks. Not submitted.');
             return false;
         }
 
@@ -493,12 +555,13 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
         } else if (error.code === 'PERMISSION_DENIED' || (error.message && error.message.includes('Permission denied'))) {
             // Handle Firebase Security Rules rejections
             console.warn("⚠️ Permission denied by Firebase Security Rules. Possible causes:");
-            console.warn("   - Cooldown not elapsed (30s between submissions)");
+            console.warn("   - Cooldown not elapsed (5s between submissions)");
             console.warn("   - Score count limit reached (max 500 per user)");
             console.warn("   - Telemetry-score correlation mismatch");
             console.warn("   - Invalid data format or extra fields");
+            console.warn("   - Security rules not deployed (run deploy-rules.bat)");
             showValidationError("Score rejected by server validation. Please wait and try again.");
-            showCooldownMessage(30);
+            showCooldownMessage(Math.ceil(SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS / 1000));
         } else {
             console.warn("⚠️ Submission error. Please try again.");
         }
@@ -510,7 +573,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 /**
  * Shows cooldown message to user
  */
-function showCooldownMessage(seconds = 30) {
+function showCooldownMessage(seconds = 5) {
     const overlay = document.getElementById('overlay');
     if (overlay && overlay.style.display === 'flex') {
         const cooldownMsg = document.createElement('div');
