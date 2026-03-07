@@ -330,25 +330,31 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 
         // OPTION 1: Use Cloud Functions for enhanced server-side validation (requires Blaze plan)
         if (USE_CLOUD_FUNCTIONS) {
-            const submitScoreFunction = httpsCallable(functions, 'submitScore');
-            await submitScoreFunction({
-                name: sanitizedName,
-                score: Math.floor(s),
-                seed: sanitizedSeed,
-                checksum: checksum,
-                telemetry: {
-                    jumps: telemetry.jumps,
-                    platforms: telemetry.platforms,
-                    duration: telemetry.duration,
-                    maxFall: telemetry.maxFall,
-                    integrityToken: telemetry.integrityToken
-                },
-                events: telemetry.events
-            });
+            try {
+                const submitScoreFunction = httpsCallable(functions, 'submitScore');
+                await submitScoreFunction({
+                    name: sanitizedName,
+                    score: Math.floor(s),
+                    seed: sanitizedSeed,
+                    checksum: checksum,
+                    telemetry: {
+                        jumps: telemetry.jumps,
+                        platforms: telemetry.platforms,
+                        duration: telemetry.duration,
+                        maxFall: telemetry.maxFall,
+                        integrityToken: telemetry.integrityToken
+                    },
+                    events: telemetry.events
+                });
 
-            console.log(`✅ Score submitted via Cloud Functions: ${sanitizedName} - ${s} points on ${sanitizedSeed}`);
-            console.log(`📊 Telemetry: ${telemetry.jumps} jumps, ${telemetry.platforms} platforms, ${telemetry.duration}s`);
-            return true;
+                console.log(`✅ Score submitted via Cloud Functions: ${sanitizedName} - ${s} points on ${sanitizedSeed}`);
+                console.log(`📊 Telemetry: ${telemetry.jumps} jumps, ${telemetry.platforms} platforms, ${telemetry.duration}s`);
+                return true;
+            } catch (cloudError) {
+                // If Cloud Functions fail (CORS, not deployed, or internal error), fall back to direct DB write
+                console.warn('⚠️ Cloud Functions unavailable, falling back to direct database write:', cloudError.code || cloudError.message);
+                // Continue to OPTION 2 below
+            }
         }
 
         // OPTION 2: Direct database write with Firebase Security Rules validation (free tier)
