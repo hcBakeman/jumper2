@@ -440,7 +440,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
                 default:
                     console.warn(`⚠️ Submission error: ${error.message || 'Please try again'}`);
             }
-        } else if (error.code === 'PERMISSION_DENIED') {
+        } else if (error.code === 'PERMISSION_DENIED' || (error.message && error.message.includes('Permission denied'))) {
             // Handle Firebase Security Rules rejections
             console.warn("⚠️ Permission denied by Firebase Security Rules. Possible causes:");
             console.warn("   - Cooldown not elapsed (30s between submissions)");
