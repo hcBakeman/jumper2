@@ -171,14 +171,21 @@ function updateLogic(dt) {
             isGameOver = true;
             const seed = document.getElementById('seed-input').value || "MISSION_1";
             const duration = Math.floor((Date.now() - gameTelemetry.gameStartTime) / 1000);
-            window.submitGlobalScore(player.name, Math.floor(myAbsHeight), seed, {
-                jumps: gameTelemetry.jumps,
-                platforms: gameTelemetry.platformTouches,
-                duration: duration,
-                maxFall: Math.floor(gameTelemetry.maxFallDistance),
-                events: gameTelemetry.events.slice(0, 100), // Send first 100 events
-                integrityToken: gameTelemetry.integrityToken
-            });
+            const finalScore = Math.floor(myAbsHeight);
+
+            // Only submit if score is valid
+            if (finalScore > 0 && Number.isFinite(finalScore)) {
+                window.submitGlobalScore(player.name, finalScore, seed, {
+                    jumps: gameTelemetry.jumps,
+                    platforms: gameTelemetry.platformTouches,
+                    duration: duration,
+                    maxFall: Math.floor(gameTelemetry.maxFallDistance),
+                    events: gameTelemetry.events.slice(0, 100), // Send first 100 events
+                    integrityToken: gameTelemetry.integrityToken
+                });
+            } else {
+                console.warn('⚠️ Invalid final score, not submitting:', finalScore);
+            }
         }
     } else {
         // DEATH CAM: Follow alive player with highest score

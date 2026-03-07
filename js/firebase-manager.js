@@ -17,7 +17,7 @@ const SECURITY_CONFIG = {
     MIN_NAME_LENGTH: 1,
     MAX_SEED_LENGTH: 50,
     MIN_SEED_LENGTH: 1,
-    MIN_SCORE: 10,
+    MIN_SCORE: 1, // Changed from 10 to 1 to allow low scores
     MAX_SCORE: 100000,
     SUBMISSION_COOLDOWN_MS: 30000, // Increased to 30 seconds
     MAX_PEER_CONNECTIONS: 8,
@@ -40,11 +40,29 @@ const SECURITY_CONFIG = {
  */
 async function generateScoreChecksum(name, score, seed, telemetry, uid) {
     const data = `${name}|${score}|${seed}|${telemetry.jumps}|${telemetry.platforms}|${telemetry.duration}|${telemetry.integrityToken}|${uid}`;
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(data);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Check if crypto.subtle is available (HTTPS or localhost only)
+    if (window.crypto && window.crypto.subtle) {
+        try {
+            const encoder = new TextEncoder();
+            const dataBuffer = encoder.encode(data);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch (error) {
+            console.warn('⚠️ crypto.subtle failed, using fallback hash:', error);
+        }
+    }
+
+    // Fallback: Simple hash function for non-secure contexts
+    // Note: This is NOT cryptographically secure, but provides basic integrity checking
+    let hash = 0;
+    for (let i = 0; i < data.length; i++) {
+        const char = data.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
 /**
@@ -166,8 +184,16 @@ const db = getDatabase(app);
 const auth = getAuth();
 const functions = getFunctions(app);
 
-// Enable Cloud Functions for enhanced security (optional, requires Blaze plan)
-const USE_CLOUD_FUNCTIONS = false; // Set to true to use Cloud Functions validation
+// Enable Cloud Functions for enhanced security
+// Automatically disabled on localhost to avoid CORS issues
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const USE_CLOUD_FUNCTIONS = !isLocalhost; // Disabled on localhost, enabled in production
+
+if (isLocalhost) {
+    console.log('🏠 Running on localhost: Cloud Functions disabled, using direct database writes');
+} else {
+    console.log('🌐 Running in production: Cloud Functions enabled for enhanced validation');
+}
 
 window.seedTop1Score = 0;
 window.seedTop10Score = 0;
@@ -367,9 +393,29 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
     } catch (error) {
         console.error("❌ Score submission failed:", error);
 
-        // Handle specific error types
-        if (error.code === 'PERMISSION_DENIED') {
-            // Check common causes
+        // Handle Cloud Functions errors
+        if (USE_CLOUD_FUNCTIONS && error.code) {
+            switch (error.code) {
+                case 'unauthenticated':
+                    console.warn("⚠️ Authentication required. Please reload the page.");
+                    break;
+                case 'invalid-argument':
+                    console.warn(`⚠️ Invalid data: ${error.message}`);
+                    break;
+                case 'permission-denied':
+                    console.warn(`⚠️ Validation failed: ${error.message}`);
+                    showValidationError(error.message);
+                    break;
+                case 'resource-exhausted':
+                    console.warn(`⚠️ ${error.message}`);
+                    const match = error.message.match(/(\d+) seconds/);
+                    if (match) showCooldownMessage(parseInt(match[1]));
+                    break;
+                default:
+                    console.warn(`⚠️ Submission error: ${error.message || 'Please try again'}`);
+            }
+        } else if (error.code === 'PERMISSION_DENIED') {
+            // Handle Firebase Security Rules errors
             if (error.message && error.message.includes('cooldown')) {
                 console.warn("⚠️ Rate limit: Please wait 30 seconds between submissions");
                 showCooldownMessage(30);
@@ -398,6 +444,20 @@ function showCooldownMessage(seconds = 30) {
     }
 }
 
+/**
+ * Shows validation error message to user
+ */
+function showValidationError(message) {
+    const overlay = document.getElementById('overlay');
+    if (overlay && overlay.style.display === 'flex') {
+        const errorMsg = document.createElement('div');
+        errorMsg.style.cssText = 'color: var(--warning); font-size: 11px; margin-top: 10px; max-width: 300px;';
+        errorMsg.textContent = `⚠️ ${message}`;
+        overlay.appendChild(errorMsg);
+        setTimeout(() => errorMsg.remove(), 5000);
+    }
+}
+
 // ============================================
 // DEVELOPER CONSOLE LOADER
 // ============================================
@@ -406,7 +466,7 @@ function showCooldownMessage(seconds = 30) {
 
 const urlParams = new URLSearchParams(window.location.search);
 const debugToken = urlParams.get('debug');
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+// isLocalhost already defined above (line 189)
 
 if (debugToken === '1' && isLocalhost) {
     // Dynamically load dev console module
