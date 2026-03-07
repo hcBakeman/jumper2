@@ -23,8 +23,6 @@ const SECURITY_CONFIG = {
     MAX_PEER_CONNECTIONS: 8,
     ALLOWED_SEED_PATTERN: /^[A-Za-z0-9_-]+$/,
     ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/,
-    MAX_SCORES_PER_USER: 500,
-    MAX_SCORES_PER_SEED: 10,
     MAX_SCORE_RATE: 100, // max points per second (tightened from 200)
     CHALLENGE_MAX_AGE_MS: 3600000 // 1 hour max game duration for challenge validity
 };
@@ -448,29 +446,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 
         // OPTION 2: Direct database write with Firebase Security Rules validation (free tier)
 
-        // 1. Read current score count for this user (for increment)
-        const scoreCountRef = ref(db, `user_score_count/${user.uid}`);
-        const countSnap = await get(scoreCountRef);
-        const currentCount = countSnap.exists() ? countSnap.val() : 0;
-
-        if (currentCount >= SECURITY_CONFIG.MAX_SCORES_PER_USER) {
-            console.warn(`⚠️ Score limit reached (${SECURITY_CONFIG.MAX_SCORES_PER_USER} submissions)`);
-            showValidationError(`Maximum score submissions reached (${SECURITY_CONFIG.MAX_SCORES_PER_USER}). Contact admin.`);
-            return false;
-        }
-
-        // 1b. Read current per-seed score count (for per-seed rate limiting)
-        const seedCountRef = ref(db, `user_seed_count/${user.uid}/${sanitizedSeed}`);
-        const seedCountSnap = await get(seedCountRef);
-        const currentSeedCount = seedCountSnap.exists() ? seedCountSnap.val() : 0;
-
-        if (currentSeedCount >= SECURITY_CONFIG.MAX_SCORES_PER_SEED) {
-            console.warn(`⚠️ Per-seed limit reached (${SECURITY_CONFIG.MAX_SCORES_PER_SEED} submissions on seed "${sanitizedSeed}")`);
-            showValidationError(`Maximum submissions for seed "${sanitizedSeed}" reached (${SECURITY_CONFIG.MAX_SCORES_PER_SEED}). Try a different seed.`);
-            return false;
-        }
-
-        // 1c. Verify challenge exists and is unused
+        // 1. Verify challenge exists and is unused
         const challengeRef = ref(db, `score_challenges/${user.uid}/${challengeId}`);
         const challengeSnap = await get(challengeRef);
         if (!challengeSnap.exists() || challengeSnap.val().used !== false) {
@@ -614,9 +590,6 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             console.log('🔍 No cooldown entry — first submission for this user');
         }
 
-        // Score count check
-        console.log(`🔍 Score count: ${currentCount} / ${SECURITY_CONFIG.MAX_SCORES_PER_USER}`);
-        console.log(`🔍 Seed score count (${sanitizedSeed}): ${currentSeedCount} / ${SECURITY_CONFIG.MAX_SCORES_PER_SEED}`);
 
         if (preCheckFailed) {
             console.warn('⚠️ Score would be rejected by security rules — aborting submission');
@@ -626,13 +599,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
 
         await set(newScoreRef, scoreData);
 
-        // 4. Increment the per-user score count (rules enforce +1 atomicity)
-        await set(scoreCountRef, currentCount + 1);
-
-        // 4b. Increment the per-seed score count (rules enforce +1 atomicity, max 10)
-        await set(seedCountRef, currentSeedCount + 1);
-
-        // 4c. Mark the challenge as used (prevents replay)
+        // 4. Mark the challenge as used (prevents replay)
         await markChallengeUsed(challengeId);
 
         // 5. Store detailed telemetry for audit (optional, 7-day retention)
