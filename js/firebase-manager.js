@@ -186,13 +186,16 @@ const functions = getFunctions(app);
 
 // Enable Cloud Functions for enhanced security
 // Automatically disabled on localhost to avoid CORS issues
+// Also disabled in production until Cloud Functions are deployed to avoid CORS warnings
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const USE_CLOUD_FUNCTIONS = !isLocalhost; // Disabled on localhost, enabled in production
+const USE_CLOUD_FUNCTIONS = false; // Set to true after deploying Cloud Functions with Blaze plan
 
 if (isLocalhost) {
     console.log('🏠 Running on localhost: Cloud Functions disabled, using direct database writes');
-} else {
+} else if (USE_CLOUD_FUNCTIONS) {
     console.log('🌐 Running in production: Cloud Functions enabled for enhanced validation');
+} else {
+    console.log('🌐 Running in production: Using direct database writes with Firebase Security Rules');
 }
 
 window.seedTop1Score = 0;
