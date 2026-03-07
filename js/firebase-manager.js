@@ -268,7 +268,7 @@ window.openGlobalModal = function() {
         const list = [];
         if (snap.val()) Object.values(snap.val()).forEach(v => list.push(v));
         list.sort((a,b) => b.score - a.score);
-        document.getElementById('global-list-content').innerHTML = list.slice(0, 50).map((e,i) => {
+        document.getElementById('global-list-content').innerHTML = list.slice(0, 25).map((e,i) => {
             const safeName = sanitizeHTML(e.name || 'Unknown');
             const safeSeed = sanitizeHTML(e.seed || 'UNKNOWN');
             const safeScore = Math.floor(e.score || 0);
