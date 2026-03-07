@@ -113,6 +113,8 @@ function gameLoop(t) {
 
 function updateLogic(dt) {
     gameTime += dt;
+
+    // 1. Päivitä liikkuvat tasot
     platforms.forEach(p => {
         if (p.mvSpeed !== 0) {
             let range = (400 - p.w) / 2;
@@ -120,33 +122,34 @@ function updateLogic(dt) {
         }
     });
 
+    // 2. Pelaajan fysiikka tai Spectator-kamera
     if (!isGameOver) {
+        // Ohjaus ja fysiikka
         if (keys['ArrowLeft']) player.vx = -400;
         else if (keys['ArrowRight']) player.vx = 400;
         else player.vx *= 0.8;
+
         player.vy += 1600 * dt;
         player.x += player.vx * dt;
         player.y += player.vy * dt;
+
+        // Ruudun reunojen yli meneminen
         if(player.x > 400) player.x = -25;
         if(player.x < -25) player.x = 400;
 
+        // Törmäykset tasoihin
         platforms.forEach(p => {
             let screenY = p.worldY + cameraY;
             if(player.vy > 0 && player.x+25 > p.x && player.x < p.x+p.w && player.y+25 > screenY && player.y+25 < screenY+15) {
                 player.vy = -650;
 
-                // Track telemetry
+                // Telemetria huijauksen estoa varten
                 gameTelemetry.jumps++;
                 gameTelemetry.platformTouches++;
-
-                // Track fall distance
                 const fallDist = Math.abs(screenY - gameTelemetry.lastJumpY);
-                if (fallDist > gameTelemetry.maxFallDistance) {
-                    gameTelemetry.maxFallDistance = fallDist;
-                }
+                if (fallDist > gameTelemetry.maxFallDistance) gameTelemetry.maxFallDistance = fallDist;
                 gameTelemetry.lastJumpY = screenY;
 
-                // Record event for replay validation
                 if (gameTelemetry.events.length < 1000) {
                     gameTelemetry.events.push({
                         t: Math.floor(gameTime * 1000),
@@ -155,12 +158,11 @@ function updateLogic(dt) {
                         h: Math.floor(myAbsHeight)
                     });
                 }
-
-                // Update integrity token
                 gameTelemetry.integrityToken = (gameTelemetry.integrityToken * 31 + Math.floor(screenY * 1000)) % 1000000;
             }
         });
 
+        // Kameran nostaminen pelaajan mukana
         if (player.y < 300) {
             let diff = 300 - player.y;
             cameraY += diff;
@@ -169,29 +171,27 @@ function updateLogic(dt) {
             window.myAbsHeight = myAbsHeight;
             player.y = 300;
         }
+
+        // Kuolema (putoaminen alareunasta)
         if(player.y + 25 > 600) {
             isGameOver = true;
             const seed = document.getElementById('seed-input').value || "MISSION_1";
-            const duration = Math.floor((Date.now() - gameTelemetry.gameStartTime) / 1000);
             const finalScore = Math.floor(myAbsHeight);
 
-            // Only submit if score is valid
             if (finalScore > 0 && Number.isFinite(finalScore)) {
                 window.submitGlobalScore(player.name, finalScore, seed, {
                     jumps: gameTelemetry.jumps,
                     platforms: gameTelemetry.platformTouches,
-                    duration: duration,
+                    duration: Math.floor((Date.now() - gameTelemetry.gameStartTime) / 1000),
                     maxFall: Math.floor(gameTelemetry.maxFallDistance),
-                    events: gameTelemetry.events.slice(0, 100), // Send first 100 events
+                    events: gameTelemetry.events.slice(0, 100),
                     integrityToken: gameTelemetry.integrityToken,
                     challengeId: gameTelemetry.challengeId
                 });
-            } else {
-                console.warn('⚠️ Invalid final score, not submitting:', finalScore);
             }
         }
-} else {
-        // --- DEATH CAM: PEHMEÄ SEURANTA ---
+    } else {
+        // --- SPECTATOR MODE: Pehmeä seuranta ---
         let bestOpponent = null;
         let maxScore = -1;
         for(let id in opponents) {
@@ -202,36 +202,45 @@ function updateLogic(dt) {
         }
 
         if(bestOpponent) {
-            // Lasketaan missä vastustaja on ruudulla juuri nyt
-            let currentOpponentScreenY = bestOpponent.absY + cameraY;
-            
-            // Halutaan vastustaja kohdalle 300px. Lasketaan ero.
-            let diff = 300 - currentOpponentScreenY;
-            
-            // TÄRKEÄÄ: Älä teleporttaa, vaan liiku pehmeästi (0.1 kerroin)
-            // Tämä antaa generaattorille aikaa luoda tasoja matkan varrella
-            cameraY += diff * 0.1; 
+            // Lasketaan kohdekameran korkeus (pelaaja kohtaan 300px)
+            let targetCameraY = 300 - bestOpponent.absY;
+            // Liikutaan pehmeästi kohti kohdetta (0.1 kerroin)
+            cameraY += (targetCameraY - cameraY) * 0.1; 
             window.cameraY = cameraY;
         }
     }
 
-    // Generate platforms based on camera (important for death cam too)
-    while (highestWorldY > -cameraY - 200) {
+    // --- DYNAAMINEN MAAILMAN GENERONTI ---
+    
+    // Generoi ylöspäin
+    while (highestWorldY > -cameraY - 100) {
         highestWorldY -= 80;
         generatePlatform(highestWorldY);
     }
 
-    document.getElementById('score').innerText = Math.floor(myAbsHeight);
+    // Generoi alaspäin (jos seurataan alempaa pelaajaa)
+    let lowestWorldY = platforms.length > 0 ? Math.max(...platforms.map(p => p.worldY)) : 600;
+    while (lowestWorldY < -cameraY + 700 && lowestWorldY < 550) {
+        lowestWorldY += 80;
+        // Varmistetaan ettei luoda tuplia
+        if (!platforms.some(p => Math.abs(p.worldY - lowestWorldY) < 40)) {
+            generatePlatform(lowestWorldY);
+        }
+    }
 
-platforms = platforms.filter(p => {
+    // 3. Tasojen siivous (Sallivampi puskuri kameran liikkuessa)
+    platforms = platforms.filter(p => {
         let screenPos = p.worldY + cameraY;
-        if (screenPos > 1200) { 
+        if (screenPos > 1200 || screenPos < -1000) {
             p.el.remove();
             return false;
         }
         return true;
     });
 
+    document.getElementById('score').innerText = Math.floor(myAbsHeight);
+
+    // 4. Lähetä data ja tarkista pelin loppu
     sendPositionUpdate(player, myAbsHeight, isGameOver);
     updateLiveTracking();
 
