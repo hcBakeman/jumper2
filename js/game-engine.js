@@ -203,46 +203,33 @@ function updateLogic(dt) {
 
         if(bestOpponent) {
             let targetCameraY = 300 - bestOpponent.absY;
-            // Liikutaan pehmeästi (0.1) jotta generaattori pysyy mukana
             cameraY += (targetCameraY - cameraY) * 0.1; 
             window.cameraY = cameraY;
         }
     }
 
-    // --- DYNAAMINEN MAAILMAN GENERONTI ---
-    
-    let viewTop = -cameraY - 200;
-    let viewBottom = -cameraY + 800;
+    // --- DETERMINISTINEN GRID-POHJAINEN GENERONTI ---
+    // Lasketaan näkyvän alueen ylä- ja alareuna maailmankoordinaatteina
+    // Lisätään reilu puskuri (200px ylös, 800px alas)
+    let gridStartY = Math.floor((-cameraY - 200) / 80) * 80;
+    let gridEndY = Math.floor((-cameraY + 800) / 80) * 80;
 
-    // Päivitetään rajat dynaamisesti olemassa olevien platformien mukaan
-    if (platforms.length > 0) {
-        highestWorldY = Math.min(...platforms.map(p => p.worldY));
-        let currentLowest = Math.max(...platforms.map(p => p.worldY));
-        
-        // Generoi ylöspäin jos tarpeen
-        while (highestWorldY > viewTop) {
-            highestWorldY -= 80;
-            generatePlatform(highestWorldY);
-        }
-
-        // Generoi alaspäin jos tarpeen (Spectating alempana)
-        let lowY = currentLowest;
-        while (lowY < viewBottom && lowY < 550) {
-            lowY += 80;
-            if (!platforms.some(p => Math.abs(p.worldY - lowY) < 40)) {
-                generatePlatform(lowY);
+    // Käydään läpi jokainen mahdollinen "taso-paikka" näkyvällä välillä
+    for (let y = gridStartY; y <= gridEndY; y += 80) {
+        // Generoidaan vain jos peli on käynnissä (ei ennen 600px alkupisteen jälkeen)
+        if (y < 550) {
+            // Tarkistetaan onko tällä korkeudella jo olemassa taso (pieni toleranssi)
+            let exists = platforms.some(p => Math.abs(p.worldY - y) < 10);
+            if (!exists) {
+                generatePlatform(y);
             }
         }
-    } else {
-        // Jos lista on tyhjä, aloitetaan generointi kameran kohdalta
-        highestWorldY = Math.floor((-cameraY + 300) / 80) * 80;
-        generatePlatform(highestWorldY);
     }
 
-    // 3. Tasojen siivous (Sallivampi puskuri)
+    // 3. Tasojen siivous (Sallivampi puskuri kameran liikkuessa)
     platforms = platforms.filter(p => {
         let screenPos = p.worldY + cameraY;
-        // Pidetään tasot muistissa laajemmalla alueella spectatingia varten
+        // Pidetään tasot muistissa vähän pidempään spectating-hyppyjä varten
         if (screenPos > 1500 || screenPos < -1500) {
             p.el.remove();
             return false;
@@ -260,7 +247,6 @@ function updateLogic(dt) {
     for(let id in opponents) if(!opponents[id].dead) anyoneAlive = true;
     if(!anyoneAlive && isRunning) showEndScreen();
 }
-
 function render() {
     document.getElementById('player').style.transform = `translate(${player.x}px, ${player.y}px)`;
     document.getElementById('player').style.display = isGameOver ? 'none' : 'block';
