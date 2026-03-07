@@ -190,8 +190,8 @@ function updateLogic(dt) {
                 console.warn('⚠️ Invalid final score, not submitting:', finalScore);
             }
         }
-    } else {
-        // DEATH CAM: Follow alive player with highest score
+} else {
+        // --- DEATH CAM: PEHMEÄ SEURANTA ---
         let bestOpponent = null;
         let maxScore = -1;
         for(let id in opponents) {
@@ -200,24 +200,32 @@ function updateLogic(dt) {
                 bestOpponent = opponents[id];
             }
         }
+
         if(bestOpponent) {
-            let targetScreenY = bestOpponent.absY + cameraY;
-            let diff = 300 - targetScreenY;
-            cameraY += diff;
+            // Lasketaan missä vastustaja on ruudulla juuri nyt
+            let currentOpponentScreenY = bestOpponent.absY + cameraY;
+            
+            // Halutaan vastustaja kohdalle 300px. Lasketaan ero.
+            let diff = 300 - currentOpponentScreenY;
+            
+            // TÄRKEÄÄ: Älä teleporttaa, vaan liiku pehmeästi (0.1 kerroin)
+            // Tämä antaa generaattorille aikaa luoda tasoja matkan varrella
+            cameraY += diff * 0.1; 
             window.cameraY = cameraY;
         }
     }
 
     // Generate platforms based on camera (important for death cam too)
-    while (highestWorldY > -cameraY - 100) {
+    while (highestWorldY > -cameraY - 200) {
         highestWorldY -= 80;
         generatePlatform(highestWorldY);
     }
 
     document.getElementById('score').innerText = Math.floor(myAbsHeight);
 
-    platforms = platforms.filter(p => {
-        if (p.worldY + cameraY > 800) {
+platforms = platforms.filter(p => {
+        let screenPos = p.worldY + cameraY;
+        if (screenPos > 1200) { 
             p.el.remove();
             return false;
         }
