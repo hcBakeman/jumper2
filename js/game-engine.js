@@ -113,12 +113,16 @@ function gameLoop(t) {
 
 function updateLogic(dt) {
     gameTime += dt;
+    window.gameTime = gameTime; // Varmistetaan että window-objekti on ajan tasalla
 
-    // 1. Päivitä liikkuvat tasot
+    // 1. Päivitä liikkuvat tasot (SYNCHRONIZED VERSION)
     platforms.forEach(p => {
         if (p.mvSpeed !== 0) {
             let range = (400 - p.w) / 2;
-            p.x = (200 - p.w/2) + Math.sin(gameTime * (Math.abs(p.mvSpeed)/60) + p.seedOffset) * range;
+            // Käytetään p.worldY + gameTime yhdistelmää. 
+            // Tämä takaa, että taso on täsmälleen samassa kohdassa kaikilla, 
+            // koska y-koordinaatti ja aika ovat nyt synkronoituja.
+            p.x = (200 - p.w/2) + Math.sin(gameTime * (Math.abs(p.mvSpeed)/60) + p.worldY) * range;
         }
     });
 
@@ -209,16 +213,11 @@ function updateLogic(dt) {
     }
 
     // --- DETERMINISTINEN GRID-POHJAINEN GENERONTI ---
-    // Lasketaan näkyvän alueen ylä- ja alareuna maailmankoordinaatteina
-    // Lisätään reilu puskuri (200px ylös, 800px alas)
     let gridStartY = Math.floor((-cameraY - 200) / 80) * 80;
     let gridEndY = Math.floor((-cameraY + 800) / 80) * 80;
 
-    // Käydään läpi jokainen mahdollinen "taso-paikka" näkyvällä välillä
     for (let y = gridStartY; y <= gridEndY; y += 80) {
-        // Generoidaan vain jos peli on käynnissä (ei ennen 600px alkupisteen jälkeen)
         if (y < 550) {
-            // Tarkistetaan onko tällä korkeudella jo olemassa taso (pieni toleranssi)
             let exists = platforms.some(p => Math.abs(p.worldY - y) < 10);
             if (!exists) {
                 generatePlatform(y);
@@ -226,10 +225,9 @@ function updateLogic(dt) {
         }
     }
 
-    // 3. Tasojen siivous (Sallivampi puskuri kameran liikkuessa)
+    // 3. Tasojen siivous
     platforms = platforms.filter(p => {
         let screenPos = p.worldY + cameraY;
-        // Pidetään tasot muistissa vähän pidempään spectating-hyppyjä varten
         if (screenPos > 1500 || screenPos < -1500) {
             p.el.remove();
             return false;
@@ -242,6 +240,14 @@ function updateLogic(dt) {
     // 4. Lähetä data ja tarkista pelin loppu
     sendPositionUpdate(player, myAbsHeight, isGameOver);
     updateLiveTracking();
+
+    // Tarkistetaan onko kukaan AFK (Lisätty varmistus)
+    const now = Date.now();
+    for (let id in opponents) {
+        if (opponents[id].lastUpdate && now - opponents[id].lastUpdate > 5000) {
+            opponents[id].dead = true;
+        }
+    }
 
     let anyoneAlive = !isGameOver;
     for(let id in opponents) if(!opponents[id].dead) anyoneAlive = true;
