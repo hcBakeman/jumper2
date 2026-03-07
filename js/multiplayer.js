@@ -127,6 +127,13 @@ function setupHostConnection(c) {
         // Update connection timestamp
         connectionTimestamps.set(c.peer, Date.now());
 
+        // AIKASYNKRONOINTI: Jos datassa on peliaika, päivitetään globaali kello tarvittaessa
+        if (data.gameTime !== undefined && window.gameTime !== undefined) {
+            if (data.gameTime > window.gameTime) {
+                window.gameTime = data.gameTime;
+            }
+        }
+
         if(data.type === 'name') {
             const safeName = sanitizePeerName(data.name);
             opponents[c.peer] = {
@@ -135,11 +142,13 @@ function setupHostConnection(c) {
                 absY: 520,
                 score: 0,
                 dead: false,
+                lastUpdate: Date.now(), // Lisätty seurantaa varten
                 el: createOpponentElement(c.peer, safeName)
             };
             updateLobbyUI();
             broadcast({ type: 'lobby_update', players: getLobbyData() });
         }
+        
         if(data.type === 'pos') {
             if(opponents[c.peer]) {
                 const validated = validateAndClampPositionData(data);
@@ -147,7 +156,10 @@ function setupHostConnection(c) {
                 opponents[c.peer].absY = validated.absY;
                 opponents[c.peer].score = validated.score;
                 opponents[c.peer].dead = validated.dead;
+                opponents[c.peer].lastUpdate = Date.now(); // Päivitetään aikaleima
             }
+            
+            // Lähetetään päivitys eteenpäin muille pelaajille (sisältäen aikasynkroni-datan)
             broadcast({
                 type: 'opp_pos',
                 id: c.peer,
@@ -155,7 +167,8 @@ function setupHostConnection(c) {
                 absY: opponents[c.peer].absY,
                 score: opponents[c.peer].score,
                 dead: opponents[c.peer].dead,
-                name: opponents[c.peer]?.name
+                name: opponents[c.peer]?.name,
+                gameTime: window.gameTime // Välitetään nykyinen synkronoitu aika
             }, c.peer);
         }
     });
