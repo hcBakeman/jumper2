@@ -256,7 +256,7 @@ window.updateSeedSidebar = function() {
         window.seedTop10Score = list.length >= 10 ? list[9].score : (list.length > 0 ? list[list.length-1].score : 0);
         window.seedScoresCount = list.length;
 
-        document.getElementById('seed-list-content').innerHTML = list.slice(0, 10).map((e, i) =>
+        document.getElementById('seed-list-content').innerHTML = list.slice(0, 25).map((e, i) =>
             renderLeaderboardRow(e, i, i === 0)
         ).join('') || "No scores yet";
     });
