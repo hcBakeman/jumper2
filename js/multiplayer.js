@@ -307,6 +307,21 @@ export function sendBackToLobby() {
     if(isHost) broadcast({ type: 'back_to_lobby' });
 }
 
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isConnected) {
+        console.log("Back online! Resyncing...");
+        
+        // Haetaan tuoreimmat tiedot globaalista ikkunasta
+        const p = window.player;
+        const h = window.myAbsHeight;
+        const g = window.isGameOver;
+
+        if (p) {
+            sendPositionUpdate(p, h, g);
+        }
+    }
+});
+
 // Export peer for access
 export { peer };
 
