@@ -80,9 +80,9 @@ export function validateTelemetry(score, telemetry) {
     // Score should roughly correlate with platforms
     // Score = height/10, platforms spawn every 80 units, so ideal ratio is ~8 points/platform
     // BUT players can bounce on platforms without height gain, or fall and re-climb
-    // Real gameplay shows 2-15 points per platform is realistic
-    const expectedMinPlatforms = Math.floor(score / 15);  // Very skilled, efficient climb
-    const expectedMaxPlatforms = Math.ceil(score / 2);    // Lots of bouncing, falling, re-climbing
+    // At low scores, players often bounce many times before dying — be generous
+    const expectedMinPlatforms = Math.max(0, Math.floor(score / 15) - 5);  // Very skilled, with tolerance
+    const expectedMaxPlatforms = Math.max(score + 20, Math.ceil(score * 2));  // Very generous upper bound
     if (telemetry.platforms < expectedMinPlatforms || telemetry.platforms > expectedMaxPlatforms) {
         console.warn(`⚠️ Telemetry mismatch: score=${score}, platforms=${telemetry.platforms} (expected ${expectedMinPlatforms}-${expectedMaxPlatforms})`);
         return false;
