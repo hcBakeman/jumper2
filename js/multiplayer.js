@@ -210,6 +210,13 @@ export function connectToPeer(player) {
                 return;
             }
 
+            // --- AIKASYNKRONOINTI GUESTILLE ---
+            // Jos host lähettää peliajan, Guest päivittää oman kellonsa vastaamaan sitä.
+            // Tämä korjaa liikkuvien platformien desyncin.
+            if (data.gameTime !== undefined && window.gameTime !== undefined) {
+                window.gameTime = data.gameTime;
+            }
+
             if(data.type === 'lobby_update') {
                 if (Array.isArray(data.players)) {
                     renderGuestLobby(data.players);
@@ -244,6 +251,7 @@ export function connectToPeer(player) {
                 opponents[data.id].absY = validated.absY;
                 opponents[data.id].score = validated.score;
                 opponents[data.id].dead = validated.dead;
+                opponents[data.id].lastUpdate = Date.now(); // Päivitetään aikaleima timeoutia varten
             }
             if(data.type === 'back_to_lobby') window.resetToLobby();
             if(data.type === 'kicked') {
@@ -307,7 +315,7 @@ export function sendPositionUpdate(player, myAbsHeight, isGameOver) {
         absY: player.y - window.cameraY,
         score: Math.floor(myAbsHeight),
         dead: isGameOver,
-        gameTime: window.gameTime // LISÄTTY: Lähetetään nykyinen peliaika
+        gameTime: window.gameTime // TÄMÄ ON TÄRKEÄ
     };
     if(isHost) broadcast(myData);
     else if(hostConn) hostConn.send(myData);
