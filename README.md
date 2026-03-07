@@ -59,8 +59,7 @@ jumper2/
 ├── assets/
 │   └── favicon.svg         # Game icon
 ├── config/
-│   ├── firebase-config.js          # Firebase configuration
-│   └── firebase-security-rules.json # Database security rules
+│   └── firebase-config.js          # Firebase configuration
 ├── functions/              # ⭐ NEW: Cloud Functions (server-side anti-cheat)
 │   ├── index.js            # Score validation, replay analysis (~430 lines)
 │   ├── package.json        # Node dependencies
@@ -155,118 +154,6 @@ testCustomTelemetry(score, telemetry)  // Test custom values
 
 **Perfect for:** Everyone! Casual games, indie developers, learning projects, production games
 
-**What you get:**
-- ✅ **Free hosting** - Zero cost, no credit card
-- ✅ **Automatic SSL** - HTTPS enabled automatically
-- ✅ **Auto-deploy** - Push to GitHub = instant deploy
-- ✅ **No dependencies** - No build tools, no npm packages
-- ✅ **Production-ready** - Global CDN, fast performance
-
-**Quick Deploy (3 steps):**
-
-```bash
-# 1. Push to GitHub
-git add .
-git commit -m "Deploy NEON REBOUND"
-git push origin main
-
-# 2. Enable GitHub Pages
-#    Go to: Repository Settings → Pages → Source: main branch
-
-# 3. Done! 
-#    Visit: https://yourusername.github.io/jumper2/
-```
-
-**📖 See [`GITHUB-PAGES-SETUP.md`](GITHUB-PAGES-SETUP.md) for complete step-by-step guide.**
-
----
-
-### Firebase Hosting (Alternative)
-
-**Best for:** Firebase ecosystem integration, custom Firebase domains
-
-```bash
-# Install Firebase CLI (one-time)
-npm install -g firebase-tools
-
-# Login and deploy
-firebase login
-firebase deploy --only hosting
-```
-
-Both GitHub Pages and Firebase Hosting use the same code - just different hosting platforms!
-
-## 🔧 Configuration
-
-
-### Firebase Setup (Required)
-
-**One-time setup for your Firebase backend:**
-
-1. **Create Firebase Project**
-   - Go to [console.firebase.google.com](https://console.firebase.google.com)
-   - Click "Add project" and follow wizard
-
-2. **Enable Realtime Database**
-   - In project, go to Realtime Database
-   - Click "Create Database"
-   - Choose any location (e.g., europe-west1)
-   - Start in **test mode** (or production mode with rules)
-
-3. **Enable Anonymous Authentication**
-   - Go to Authentication → Sign-in method
-   - Enable "Anonymous" provider
-
-4. **Update Firebase Config**
-   - Get your config from Project Settings → General
-   - Update `config/firebase-config.js` with your values
-
-5. **Add Authorized Domains**
-   - Go to Authentication → Settings → Authorized domains
-   - Add your GitHub Pages domain: `username.github.io`
-
-**That's it!** Your Firebase backend is ready. Now deploy to GitHub Pages.
-
-**Note:** Firebase API keys are safe to commit to Git. See: https://firebase.google.com/docs/projects/api-keys
-
-## 📊 Monitoring
-
-### Firebase Console
-
-Monitor your game's usage:
-- **Database Usage** - Reads, writes, bandwidth
-- **Authentication** - Active users
-
-### Set Billing Alerts
-
-1. Firebase Console → Settings → Usage and billing
-2. Set budget alerts (e.g., $5, $10)
-3. Receive email notifications
-
-### Free Tier Limits
-
-- **Database**: 1 GB storage, 10 GB/month downloads
-- **Authentication**: Unlimited
-- **Hosting**: 10 GB storage, 360 MB/day bandwidth
-
-Most indie games stay well within free tier limits.
-
-## 🐛 Troubleshooting
-
-### "Permission Denied" Errors
-- **Cause**: Database security configuration
-- **Fix**: Check Firebase Console database rules
-
-### PeerJS Connection Issues
-- **Cause**: Firewall or NAT traversal problems
-- **Fix**: Ensure HTTPS is enabled, test on different networks
-
-### Scores Not Appearing
-- **Cause**: Authentication failed or database error
-- **Fix**: Check browser console for error messages
-
-**See `GITHUB-PAGES-SETUP.md` for more troubleshooting tips.**
-
 ## 🔐 Security & Anti-Cheat
 
 ### Multi-Layer Security Architecture
@@ -301,10 +188,6 @@ Most indie games stay well within free tier limits.
 - ❌ Impossible scores (physics violations)
 - ❌ Rapid bot submissions
 - ❌ Replay data injection
-
-**Cost**: $0-5/month (free for most games on Spark plan)
-
-**Deploy**: See `docs/QUICKSTART-FUNCTIONS.md`
 
 ### API Key Exposure
 
