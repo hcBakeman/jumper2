@@ -202,9 +202,8 @@ function updateLogic(dt) {
         }
 
         if(bestOpponent) {
-            // Lasketaan kohdekameran korkeus (pelaaja kohtaan 300px)
             let targetCameraY = 300 - bestOpponent.absY;
-            // Liikutaan pehmeästi kohti kohdetta (0.1 kerroin)
+            // Liikutaan pehmeästi (0.1) jotta generaattori pysyy mukana
             cameraY += (targetCameraY - cameraY) * 0.1; 
             window.cameraY = cameraY;
         }
@@ -212,26 +211,39 @@ function updateLogic(dt) {
 
     // --- DYNAAMINEN MAAILMAN GENERONTI ---
     
-    // Generoi ylöspäin
-    while (highestWorldY > -cameraY - 100) {
-        highestWorldY -= 80;
+    let viewTop = -cameraY - 200;
+    let viewBottom = -cameraY + 800;
+
+    // Päivitetään rajat dynaamisesti olemassa olevien platformien mukaan
+    if (platforms.length > 0) {
+        highestWorldY = Math.min(...platforms.map(p => p.worldY));
+        let currentLowest = Math.max(...platforms.map(p => p.worldY));
+        
+        // Generoi ylöspäin jos tarpeen
+        while (highestWorldY > viewTop) {
+            highestWorldY -= 80;
+            generatePlatform(highestWorldY);
+        }
+
+        // Generoi alaspäin jos tarpeen (Spectating alempana)
+        let lowY = currentLowest;
+        while (lowY < viewBottom && lowY < 550) {
+            lowY += 80;
+            if (!platforms.some(p => Math.abs(p.worldY - lowY) < 40)) {
+                generatePlatform(lowY);
+            }
+        }
+    } else {
+        // Jos lista on tyhjä, aloitetaan generointi kameran kohdalta
+        highestWorldY = Math.floor((-cameraY + 300) / 80) * 80;
         generatePlatform(highestWorldY);
     }
 
-    // Generoi alaspäin (jos seurataan alempaa pelaajaa)
-    let lowestWorldY = platforms.length > 0 ? Math.max(...platforms.map(p => p.worldY)) : 600;
-    while (lowestWorldY < -cameraY + 700 && lowestWorldY < 550) {
-        lowestWorldY += 80;
-        // Varmistetaan ettei luoda tuplia
-        if (!platforms.some(p => Math.abs(p.worldY - lowestWorldY) < 40)) {
-            generatePlatform(lowestWorldY);
-        }
-    }
-
-    // 3. Tasojen siivous (Sallivampi puskuri kameran liikkuessa)
+    // 3. Tasojen siivous (Sallivampi puskuri)
     platforms = platforms.filter(p => {
         let screenPos = p.worldY + cameraY;
-        if (screenPos > 1200 || screenPos < -1000) {
+        // Pidetään tasot muistissa laajemmalla alueella spectatingia varten
+        if (screenPos > 1500 || screenPos < -1500) {
             p.el.remove();
             return false;
         }
