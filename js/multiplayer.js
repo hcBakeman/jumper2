@@ -293,7 +293,8 @@ export function sendPositionUpdate(player, myAbsHeight, isGameOver) {
         x: player.x,
         absY: player.y - window.cameraY,
         score: Math.floor(myAbsHeight),
-        dead: isGameOver
+        dead: isGameOver,
+        gameTime: window.gameTime // LISÄTTY: Lähetetään nykyinen peliaika
     };
     if(isHost) broadcast(myData);
     else if(hostConn) hostConn.send(myData);
