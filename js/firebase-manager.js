@@ -19,7 +19,7 @@ const SECURITY_CONFIG = {
     MIN_SEED_LENGTH: 1,
     MIN_SCORE: 1, // Changed from 10 to 1 to allow low scores
     MAX_SCORE: 100000,
-    SUBMISSION_COOLDOWN_MS: 30000, // Increased to 30 seconds
+    SUBMISSION_COOLDOWN_MS: 5000, // 5 seconds
     MAX_PEER_CONNECTIONS: 8,
     ALLOWED_SEED_PATTERN: /^[A-Za-z0-9_-]+$/,
     ALLOWED_NAME_PATTERN: /^[A-Za-z0-9_\-\s]+$/,
