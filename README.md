@@ -2,7 +2,6 @@
 
 A fast-paced vertical jumping game with real-time multiplayer, global leaderboards, and seed-based challenges. Built with Firebase and PeerJS - no backend server, no build tools, no dependencies required!
 
-**Deploy to GitHub Pages in 10 minutes - 100% FREE!** ✨
 
 ## 🌟 Features
 
@@ -12,20 +11,6 @@ A fast-paced vertical jumping game with real-time multiplayer, global leaderboar
 - **Anonymous Play** - No registration required, just enter a name and play
 - **Cross-Platform** - Works on desktop and mobile browsers
 - **Free Hosting** - Deploy to GitHub Pages at zero cost
-
-## 🚀 Quick Start
-
-### Play Locally
-
-1. Clone this repository
-2. Run a local server (required for ES6 modules):
-   - **Windows:** Double-click `start-server.bat`
-   - **Python:** `python -m http.server 8000`
-   - **Node.js:** `npx -y http-server -p 8000`
-3. Open `http://localhost:8000` in your browser
-4. Enter your name and start playing!
-
-**Note:** Opening `index.html` directly (`file://`) won't work due to CORS restrictions with ES6 modules.
 
 ### Multiplayer Setup
 
