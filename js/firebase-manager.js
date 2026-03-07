@@ -78,10 +78,9 @@ export function validateTelemetry(score, telemetry) {
     if (telemetry.duration < 1 || telemetry.duration > 3600) return false;
 
     // Score should roughly correlate with platforms
-    // Score = height/10, platforms spawn every 80 units, so ideal ratio is ~8 points/platform
-    // BUT players can bounce on platforms without height gain, or fall and re-climb
-    // At low scores, players often bounce many times before dying — be generous
-    const expectedMinPlatforms = Math.max(0, Math.floor(score / 15) - 5);  // Very skilled, with tolerance
+    // Server rule: (platforms + 5) * 15 >= score
+    // So minimum platforms = ceil(score / 15) - 5
+    const expectedMinPlatforms = Math.max(0, Math.ceil(score / 15) - 5);  // Match server rule exactly
     const expectedMaxPlatforms = Math.max(score + 20, Math.ceil(score * 2));  // Very generous upper bound
     if (telemetry.platforms < expectedMinPlatforms || telemetry.platforms > expectedMaxPlatforms) {
         console.warn(`⚠️ Telemetry mismatch: score=${score}, platforms=${telemetry.platforms} (expected ${expectedMinPlatforms}-${expectedMaxPlatforms})`);
@@ -374,11 +373,25 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             return false;
         }
 
-        // 2. Write the score entry
+        // 2. Check cooldown before attempting the write
+        const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
+        const cooldownSnap = await get(cooldownRef);
+        if (cooldownSnap.exists()) {
+            const lastSubmission = cooldownSnap.val();
+            const elapsed = Date.now() - lastSubmission;
+            if (elapsed < SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS) {
+                const remaining = Math.ceil((SECURITY_CONFIG.SUBMISSION_COOLDOWN_MS - elapsed) / 1000);
+                console.warn(`⚠️ Cooldown active: ${remaining}s remaining`);
+                showCooldownMessage(remaining);
+                return false;
+            }
+        }
+
+        // 3. Write the score entry
         const highscoresRef = ref(db, 'highscores');
         const newScoreRef = push(highscoresRef);
 
-        await set(newScoreRef, {
+        const scoreData = {
             name: sanitizedName,
             score: Math.floor(s), // Ensure integer
             seed: sanitizedSeed,
@@ -389,14 +402,52 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
                 jumps: Math.floor(telemetry.jumps),
                 platforms: Math.floor(telemetry.platforms),
                 duration: Math.floor(telemetry.duration),
-                maxFall: Math.floor(telemetry.maxFall)
+                maxFall: Math.min(1000, Math.floor(telemetry.maxFall))
             }
-        });
+        };
 
-        // 3. Increment the per-user score count (rules enforce +1 atomicity)
+        // Log data for debugging rule failures
+        console.log('📝 Score data to submit:', JSON.stringify({
+            ...scoreData,
+            timestamp: '<serverTimestamp>'
+        }, null, 2));
+
+        // Validate correlation checks client-side (mirror security rules)
+        const floorScore = Math.floor(s);
+        const floorDuration = Math.floor(telemetry.duration);
+        const floorPlatforms = Math.floor(telemetry.platforms);
+        const floorJumps = Math.floor(telemetry.jumps);
+        let preCheckFailed = false;
+
+        if (floorScore > floorDuration * 200) {
+            console.warn(`⚠️ Pre-check fail: score(${floorScore}) > duration(${floorDuration}) * 200 = ${floorDuration * 200}`);
+            preCheckFailed = true;
+        }
+        if ((floorPlatforms + 5) * 15 < floorScore) {
+            console.warn(`⚠️ Pre-check fail: (platforms(${floorPlatforms}) + 5) * 15 = ${(floorPlatforms + 5) * 15} < score(${floorScore})`);
+            preCheckFailed = true;
+        }
+        if (floorJumps - floorPlatforms > 10) {
+            console.warn(`⚠️ Pre-check fail: jumps(${floorJumps}) - platforms(${floorPlatforms}) = ${floorJumps - floorPlatforms} > 10`);
+            preCheckFailed = true;
+        }
+        if (floorPlatforms - floorJumps > 10) {
+            console.warn(`⚠️ Pre-check fail: platforms(${floorPlatforms}) - jumps(${floorJumps}) = ${floorPlatforms - floorJumps} > 10`);
+            preCheckFailed = true;
+        }
+
+        if (preCheckFailed) {
+            console.warn('⚠️ Score would be rejected by security rules — aborting submission');
+            showValidationError('Score data failed anti-cheat correlation checks. Not submitted.');
+            return false;
+        }
+
+        await set(newScoreRef, scoreData);
+
+        // 4. Increment the per-user score count (rules enforce +1 atomicity)
         await set(scoreCountRef, currentCount + 1);
 
-        // 4. Store detailed telemetry for audit (optional, 7-day retention)
+        // 5. Store detailed telemetry for audit (optional, 7-day retention)
         if (telemetry.events && telemetry.events.length > 0) {
             const telemetryRef = ref(db, `score_telemetry/${newScoreRef.key}`);
             await set(telemetryRef, {
@@ -409,8 +460,7 @@ window.submitGlobalScore = async function(n, s, seed, telemetry = null) {
             });
         }
 
-        // 5. Update cooldown timestamp
-        const cooldownRef = ref(db, `user_cooldowns/${user.uid}`);
+        // 6. Update cooldown timestamp (AFTER highscore write - rules check cooldown is old/null)
         await set(cooldownRef, serverTimestamp());
 
         console.log(`✅ Score submitted: ${sanitizedName} - ${s} points on ${sanitizedSeed} (ID: ${newScoreRef.key})`);
